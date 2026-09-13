@@ -34,27 +34,67 @@ import air_keyboard as kb  # Module 1: keyboard structure / rendering
 # CONFIG
 # ----------------------------------------------------------------------
 FINGER_TIP_ID = 8       # MediaPipe Hands landmark id for the index fingertip
-PRESS_COOLDOWN = 0.35   # seconds before the same key can be "typed" again
-COLOR_PRESSED = (120, 255, 120)   # green highlight when a key is hit
+COLOR_PRESSED = (120, 255, 120)    # green highlight while the key is held
+COLOR_HOVER = (255, 255, 150)      # faint highlight when just hovering (not pressed)
 COLOR_BORDER = kb.COLOR_BORDER
 COLOR_TEXT = kb.COLOR_TEXT
 COLOR_HUD_BG = (40, 20, 0)
 
+# --- Real, depth-based "press" detection -------------------------------
+# MediaPipe gives each landmark a relative z (roughly: negative/smaller
+# means closer to the camera). We smooth it over a few frames as a
+# "resting depth" baseline, and treat a sudden move toward the camera
+# (a push) as a press, with hysteresis so the finger has to pull back
+# out before it can press the same key again. This makes typing an
+# actual in-air push gesture instead of just hovering over a 2D area.
+Z_SMOOTHING = 0.25          # exponential smoothing factor for the baseline
+PRESS_Z_DELTA = 0.025       # how much closer (in MediaPipe z units) counts as a push
+RELEASE_Z_DELTA = 0.012     # must pull back at least this much to arm the next press
 
-def find_hovered_key(frame, hand_landmarks, projected_keys):
-    """Return (char, fingertip_xy) for the key under the index fingertip,
-    or (None, fingertip_xy) if the fingertip isn't over any key."""
+
+class PressTracker:
+    """Tracks one fingertip's depth over time to detect push/release presses."""
+
+    def __init__(self):
+        self.baseline_z = None
+        self.pressed_key = None
+
+    def update(self, current_z, hovered_char):
+        if self.baseline_z is None:
+            self.baseline_z = current_z
+
+        pushed_in = (self.baseline_z - current_z) > PRESS_Z_DELTA
+        pulled_back = (self.baseline_z - current_z) < RELEASE_Z_DELTA
+
+        # Slowly drift the baseline toward the current depth so that just
+        # resting the hand at a new distance doesn't count as a push.
+        if pulled_back:
+            self.baseline_z += (current_z - self.baseline_z) * Z_SMOOTHING
+            self.pressed_key = None
+
+        typed_char = None
+        if hovered_char is not None and pushed_in and self.pressed_key != hovered_char:
+            typed_char = hovered_char
+            self.pressed_key = hovered_char
+        elif hovered_char is None:
+            self.pressed_key = None
+
+        return typed_char, pushed_in
+
+
+def get_hovered_key(hand_landmarks, projected_keys):
+    """Return (char, poly, fingertip_xy, fingertip_z) for the key under
+    the index fingertip, or (None, None, fingertip_xy, fingertip_z) if
+    the fingertip isn't over any key. Doesn't draw anything -- drawing
+    happens afterward, once we know if it's a hover or an actual press."""
     tip = hand_landmarks.landmark[FINGER_TIP_ID]
     fx, fy = int(tip.x * kb.FRAME_W), int(tip.y * kb.FRAME_H)
 
-    for key, poly in projected_keys:
-        inside = cv2.pointPolygonTest(poly, (fx, fy), False) >= 0
-        if inside:
-            cv2.fillConvexPoly(frame, poly, COLOR_PRESSED)
-            cv2.polylines(frame, [poly], True, COLOR_BORDER, 1, cv2.LINE_AA)
-            return key["char"], (fx, fy)
+    for key, poly, _depth in projected_keys:
+        if cv2.pointPolygonTest(poly, (fx, fy), False) >= 0:
+            return key["char"], poly, (fx, fy), tip.z
 
-    return None, (fx, fy)
+    return None, None, (fx, fy), tip.z
 
 
 def draw_hud(frame, typed_text):
@@ -82,8 +122,7 @@ def main():
     )
 
     typed_text = ""
-    last_pressed_char = None
-    last_press_time = 0.0
+    tracker = PressTracker()
 
     while True:
         ok, frame = cap.read()
@@ -99,23 +138,22 @@ def main():
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         result = hands.process(rgb)
 
-        hovered_char = None
         if result.multi_hand_landmarks:
             for hand_landmarks in result.multi_hand_landmarks:
-                hovered_char, (fx, fy) = find_hovered_key(frame, hand_landmarks, projected_keys)
+                hovered_char, poly, (fx, fy), tip_z = get_hovered_key(hand_landmarks, projected_keys)
+
+                # Depth-based press: did the finger just push toward the keyboard?
+                typed_char, is_pressed = tracker.update(tip_z, hovered_char)
+
+                if poly is not None:
+                    color = COLOR_PRESSED if is_pressed else COLOR_HOVER
+                    cv2.fillConvexPoly(frame, poly, color)
+                    cv2.polylines(frame, [poly], True, COLOR_BORDER, 1, cv2.LINE_AA)
+
                 cv2.circle(frame, (fx, fy), 12, (0, 255, 255), -1, cv2.LINE_AA)
 
-        if hovered_char is not None:
-            now = time.time()
-            same_key_recent = (
-                hovered_char == last_pressed_char and (now - last_press_time) < PRESS_COOLDOWN
-            )
-            if not same_key_recent:
-                typed_text += " " if hovered_char == "SPACE" else hovered_char
-                last_pressed_char = hovered_char
-                last_press_time = now
-        else:
-            last_pressed_char = None
+                if typed_char is not None:
+                    typed_text += " " if typed_char == "SPACE" else typed_char
 
         draw_hud(frame, typed_text)
 

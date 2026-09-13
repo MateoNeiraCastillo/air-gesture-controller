@@ -19,8 +19,12 @@ Public API used by other modules:
     FRAME_W, FRAME_H      - expected frame size
     KEYBOARD              - list of key dicts (layout data)
     render_keyboard(frame, t) -> (frame_with_keys, projected_keys)
-        projected_keys is a list of (key_dict, poly) tuples, where poly
-        is the projected 2D quad (numpy int32 array) for hit-testing.
+        projected_keys is a list of (key_dict, poly, depth) tuples:
+          - poly: projected 2D quad (numpy int32 array) for x/y hit-testing
+          - depth: the key's average distance from the camera in the same
+            "world units" used by the 3D layout. Useful for a module that
+            wants to do real depth-based press detection (not just 2D
+            hover), since keys farther back have a larger depth value.
 """
 
 import math
@@ -47,9 +51,9 @@ KEY_GAP = 0.08                    # gap between keys
 # A small CAM_DEPTH (keyboard close to the camera) makes the size
 # difference between near and far keys strong, which is what sells the
 # "3D keyboard lying on a table" look instead of a flat rectangle.
-CAM_TILT_DEG = 62   # how much the table is tilted toward the camera
-CAM_DEPTH = 3.0      # distance from camera to the keyboard
-FOCAL = 560          # focal length (lower = smaller keyboard)
+CAM_TILT_DEG = 500   # how much the table is tilted toward the camera (more = flatter/more "top-down")
+CAM_DEPTH = 4.0      # distance from camera to the keyboard
+FOCAL = 520          # focal length (lower = smaller keyboard)
 
 # "Tech blue" palette
 COLOR_KEY_NEAR = (255, 200, 60)    # BGR: bright cyan/blue (near keys)
@@ -122,7 +126,7 @@ def _project(points_3d, hover_y=0.0):
     pts[:, 1] += hover_y                 # small floating bob
     pts = _rotate_x(pts, CAM_TILT_DEG)
     pts[:, 2] += CAM_DEPTH               # push the keyboard away from the "eye"
-    pts[:, 1] += 1.3                     # vertical centering in frame
+    pts[:, 1] += 1.8                     # vertical centering in frame
 
     z = np.clip(pts[:, 2], 0.15, None)
     x2d = FRAME_W / 2 + FOCAL * pts[:, 0] / z
@@ -152,9 +156,10 @@ def render_keyboard(frame, t):
     Returns:
         (frame_out, projected_keys)
         frame_out: the frame with the keyboard blended on top.
-        projected_keys: list of (key_dict, poly) for hit-testing, where
+        projected_keys: list of (key_dict, poly, depth) for hit-testing.
             poly is an (4, 2) int32 numpy array with the key's projected
-            screen-space quad.
+            screen-space quad. depth is the key's average camera-space
+            distance (float), for real depth-based press detection.
     """
     hover = math.sin(t * 1.6) * 0.06  # gentle floating motion
 
@@ -188,7 +193,7 @@ def render_keyboard(frame, t):
             0.55 * scale, COLOR_TEXT, 2, cv2.LINE_AA,
         )
 
-        projected_keys.append((key, poly))
+        projected_keys.append((key, poly, avg_depth))
 
     # Blend the semi-transparent keys on top of the real camera image
     frame_out = cv2.addWeighted(frame, 0.35, key_layer, 0.65, 0)
