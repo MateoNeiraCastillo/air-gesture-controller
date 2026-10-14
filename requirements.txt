@@ -1,0 +1,5 @@
+# Dependencias del spike (Fase 0-1). El pyproject.toml con el paquete
+# completo llega en la Fase 2, cuando exista código de producción.
+mediapipe>=0.10.14
+opencv-python>=4.9
+numpy>=1.26
