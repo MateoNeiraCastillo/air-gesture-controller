@@ -1,3 +1,6 @@
+from air_controller.hands import assign_hands
+from mediapipe.tasks.python.vision.hand_landmarker import HandLandmarkerResult
+
 """Paso 3: detecta hasta dos manos y mide el coste de MediaPipe por frame."""
 
 import statistics
@@ -27,7 +30,7 @@ def open_camera(index: int) -> cv2.VideoCapture:
     return camera
 
 
-def build_landmarker(model_path: Path, use_gpu: bool) -> vision.HandLandmarker:
+def build_landmarker(model_path: Path, use_gpu: bool) -> HandLandmarkerResult:
     delegate = BaseOptions.Delegate.GPU if use_gpu else BaseOptions.Delegate.CPU
     options = vision.HandLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=str(model_path), delegate=delegate),
@@ -49,18 +52,21 @@ def to_mediapipe_image(frame, use_gpu: bool) -> mp.Image:
     return mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
 
-def draw_hands(frame, result: vision.HandLandmarkerResult) -> None:
+def draw_hands(frame, result: HandLandmarkerResult) -> None:
     height, width = frame.shape[:2]
-    for landmarks, handedness in zip(result.hand_landmarks, result.handedness):
-        label = handedness[0].category_name
-        color = (255, 128, 0) if label == "Left" else (0, 200, 255)
+    assigned = assign_hands(result.hand_landmarks)
+    for landmarks, label, color in (
+        (assigned.left, "IZQ", (255, 128, 0)),
+        (assigned.right, "DER", (0, 200, 255)),
+    ):
+        if landmarks is None:
+            continue
         for point in landmarks:
             center = (int(point.x * width), int(point.y * height))
             cv2.circle(frame, center, 3, color, -1)
         wrist = landmarks[WRIST]
         cv2.putText(frame, label, (int(wrist.x * width), int(wrist.y * height) + 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-
 
 def print_summary(inference_times_ms: list[float], frames_counted: int,
                   frames_with_two_hands: int, use_gpu: bool) -> None:
