@@ -1,3 +1,15 @@
+# macOS
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
 .venv/
+.pytest_cache/
+*.egg-info/
+
+# Modelo descargado (no se versiona)
 models/*.task
+
+# Vídeos, landmarks y gráficas del spike: pesan mucho y no van a git
+data/
