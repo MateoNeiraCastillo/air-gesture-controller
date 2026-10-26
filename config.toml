@@ -1,0 +1,40 @@
+# Configuración del Air Gesture Controller.
+# Todos los valores se validan al arrancar: si algo está fuera de rango,
+# el programa no arranca y te dice qué línea corregir.
+
+[calibration]
+# Frames VÁLIDOS (mano detectada) que se recogen por cada postura.
+# 90 frames ≈ 3 s a 30 fps, lo mismo que en el spike.
+frames_per_pose = 90
+# Separación mínima entre dos posturas (p. ej. reposo vs A pulsado), medida en
+# desviaciones típicas de la propia postura. Por debajo, la calibración se
+# rechaza y se pide repetir: pulsaste demasiado flojo o la mano se movió.
+min_separation = 3.0
+
+[classifier]
+# La cruceta cuenta como pulsada cuando el pulgar ha recorrido esta fracción
+# del camino entre reposo y la dirección calibrada. 0.5 = a mitad de camino.
+# Más bajo: más sensible, pero más pulsaciones accidentales.
+dpad_threshold = 0.5
+
+[posture]
+# Si el tamaño aparente de la mano se aleja de la calibración más allá de estos
+# límites (porque la mano ha girado o te has acercado o alejado), se avisa.
+hand_size_ratio_min = 0.7
+hand_size_ratio_max = 1.4
+
+[timing]
+# Tiempo que un botón tiene que verse pulsado antes de enviar la tecla.
+# ~2 frames a 25 fps. Bajarlo da menos retraso y más pulsaciones fantasma.
+press_confirm_ms = 80
+# Tiempo que tiene que verse soltado antes de soltar la tecla.
+release_confirm_ms = 80
+# Tiempo sin ver una mano antes de soltar sus botones. Cubre los parpadeos de
+# detección (~2-5 % de frames en el spike) sin dejar teclas pegadas.
+missing_hand_ms = 200
+
+[keys]
+# Tecla que envía cada botón. PENDIENTE: confirmar con FullScreenMario en la Fase 3.
+left = "left"
+right = "right"
+a = "up"
