@@ -38,10 +38,11 @@ def feed(collector: CalibrationCollector, pose: Pose, left_tip, right_tip, frame
         collector.add(make_hand(*left_tip), make_hand(*right_tip))
 
 
-def calibrate(pressed=PRESSED, dpad_left=DPAD_LEFT, dpad_right=DPAD_RIGHT) -> CalibrationCollector:
+def calibrate(pressed=PRESSED, dpad_left=DPAD_LEFT, dpad_right=DPAD_RIGHT,
+              left_while_a=REST) -> CalibrationCollector:
     collector = CalibrationCollector(frames_per_pose=FRAMES)
     feed(collector, Pose.REST, REST, REST)
-    feed(collector, Pose.A_PRESSED, REST, pressed)
+    feed(collector, Pose.A_PRESSED, left_while_a, pressed)
     feed(collector, Pose.DPAD_LEFT, dpad_left, REST)
     feed(collector, Pose.DPAD_RIGHT, dpad_right, REST)
     return collector
@@ -58,21 +59,29 @@ def test_follows_the_sequence_and_finishes() -> None:
 
 
 def test_good_calibration_is_accepted() -> None:
-    result = calibrate().build(min_separation=3.0)
+    result = calibrate().build(min_separation=3.0, dpad_threshold=0.5)
     assert result.ok, result.problems
     assert result.calibration.right_hand_size == pytest.approx(100, abs=2)
 
 
 def test_weak_press_is_rejected_with_a_useful_message() -> None:
-    result = calibrate(pressed=(60, -39)).build(min_separation=3.0)
+    result = calibrate(pressed=(60, -39)).build(min_separation=3.0, dpad_threshold=0.5)
     assert not result.ok
     assert any("Botón A" in problem for problem in result.problems)
 
 
 def test_weak_dpad_right_is_rejected() -> None:
-    result = calibrate(dpad_right=(61, -40)).build(min_separation=3.0)
+    result = calibrate(dpad_right=(61, -40)).build(min_separation=3.0, dpad_threshold=0.5)
     assert not result.ok
     assert any("Cruceta derecha" in problem for problem in result.problems)
+
+
+def test_left_thumb_drifting_to_right_while_pressing_a_is_rejected() -> None:
+    """El caso de la sesión de noche: al pulsar A, el pulgar izquierdo se iba a 'derecha'."""
+    drifted = (REST[0] + 0.8 * (DPAD_RIGHT[0] - REST[0]), REST[1])
+    result = calibrate(left_while_a=drifted).build(min_separation=3.0, dpad_threshold=0.5)
+    assert not result.ok
+    assert any("Al pulsar A" in problem and "derecha" in problem for problem in result.problems)
 
 
 def test_frames_without_the_required_hand_do_not_count() -> None:
@@ -90,7 +99,7 @@ def test_nan_landmarks_do_not_count() -> None:
 
 
 def test_building_before_finishing_reports_a_problem() -> None:
-    result = CalibrationCollector(frames_per_pose=FRAMES).build(min_separation=3.0)
+    result = CalibrationCollector(frames_per_pose=FRAMES).build(min_separation=3.0, dpad_threshold=0.5)
     assert not result.ok
 
 

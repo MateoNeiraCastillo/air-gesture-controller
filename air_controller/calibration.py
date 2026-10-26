@@ -4,7 +4,7 @@ En el spike vimos que las referencias de una sesión no sirven en otra (53–67 
 de acierto), así que cada partida empieza calibrando cuatro posturas:
 
     1. reposo       (las dos manos)  → referencia de "nada pulsado"
-    2. A pulsado    (mano derecha)
+    2. A pulsado    (las dos manos)  → la izquierda debe seguir en reposo
     3. cruceta izq. (mano izquierda)
     4. cruceta der. (mano izquierda)
 
@@ -14,7 +14,9 @@ Decisiones:
 - Referencias con mediana y dispersión robusta (MAD): un landmark disparatado
   ocasional no mueve la referencia.
 - Control de calidad: si dos posturas quedan demasiado juntas, la calibración
-  se rechaza con un mensaje que dice qué repetir.
+  se rechaza con un mensaje que dice qué repetir. Incluye el caso que vimos en
+  el spike (noche): al pulsar A, el pulgar izquierdo se iba solo a la postura
+  de "derecha", y el mando habría pulsado derecha sin querer todo el rato.
 
 Todo es lógica pura: recibe landmarks, no toca la cámara.
 """
@@ -24,6 +26,7 @@ from enum import Enum
 
 import numpy as np
 
+from air_controller.buttons import Button
 from air_controller.features import hand_size, thumb_position_features
 
 # Columnas de thumb_position_features usadas por cada control (ver spike):
@@ -47,7 +50,7 @@ CALIBRATION_SEQUENCE = (Pose.REST, Pose.A_PRESSED, Pose.DPAD_LEFT, Pose.DPAD_RIG
 # Qué manos tienen que verse en cada postura para que el frame cuente.
 REQUIRED_HANDS = {
     Pose.REST: ("left", "right"),
-    Pose.A_PRESSED: ("right",),
+    Pose.A_PRESSED: ("right", "left"),
     Pose.DPAD_LEFT: ("left",),
     Pose.DPAD_RIGHT: ("left",),
 }
@@ -68,14 +71,51 @@ class Reference:
 
 
 @dataclass(frozen=True)
+class DpadGeometry:
+    """La cruceta calibrada, en un espacio escalado por el ruido de las posturas.
+
+    - nearest(): qué dirección calibrada (izquierda o derecha) está más cerca.
+    - progress(): cuánto ha avanzado el pulgar desde el reposo hacia cada una
+      (0 = reposo, 1 = como al calibrar).
+    """
+
+    scale: np.ndarray
+    rest: np.ndarray
+    targets: dict[Button, np.ndarray]
+    units: dict[Button, np.ndarray]
+    lengths: dict[Button, float]
+
+    @classmethod
+    def from_references(cls, rest: Reference, left: Reference, right: Reference) -> "DpadGeometry":
+        scale = np.sqrt(np.mean([r.spread ** 2 for r in (rest, left, right)], axis=0))
+        rest_point = rest.center / scale
+        targets = {Button.LEFT: left.center / scale, Button.RIGHT: right.center / scale}
+        lengths = {button: float(np.linalg.norm(target - rest_point)) for button, target in targets.items()}
+        units = {button: (target - rest_point) / max(lengths[button], MIN_SPREAD)
+                 for button, target in targets.items()}
+        return cls(scale, rest_point, targets, units, lengths)
+
+    def progress(self, features: np.ndarray) -> dict[Button, float]:
+        offset = features / self.scale - self.rest
+        return {button: float(offset @ self.units[button]) / max(self.lengths[button], MIN_SPREAD)
+                for button in self.targets}
+
+    def nearest(self, features: np.ndarray) -> Button:
+        point = features / self.scale
+        return min(self.targets, key=lambda button: np.linalg.norm(point - self.targets[button]))
+
+
+@dataclass(frozen=True)
 class Calibration:
     """Todo lo que el clasificador necesita saber de esta sesión."""
 
     right_rest: Reference         # columnas BUTTON_COLUMNS
     right_pressed: Reference      # columnas BUTTON_COLUMNS
     left_rest: Reference          # columnas DPAD_COLUMNS
+    left_rest_while_a: Reference  # pulgar izquierdo mientras la derecha pulsa A
     left_dpad_left: Reference     # columnas DPAD_COLUMNS
     left_dpad_right: Reference    # columnas DPAD_COLUMNS
+    dpad: DpadGeometry
     left_hand_size: float         # píxeles; para avisar si la mano gira o se aleja
     right_hand_size: float
 
@@ -154,10 +194,10 @@ class CalibrationCollector:
             self._step += 1
         return True
 
-    def build(self, min_separation: float) -> CalibrationResult:
+    def build(self, min_separation: float, dpad_threshold: float) -> CalibrationResult:
         if not self.done:
             return CalibrationResult(None, ["La calibración no ha terminado."])
-        return build_calibration(self._samples(), self._median_sizes(), min_separation)
+        return build_calibration(self._samples(), self._median_sizes(), min_separation, dpad_threshold)
 
     def _samples(self) -> dict[Pose, dict[str, np.ndarray]]:
         return {pose: {hand: np.array(rows) for hand, rows in by_hand.items() if rows}
@@ -169,27 +209,34 @@ class CalibrationCollector:
 
 def build_calibration(samples: dict[Pose, dict[str, np.ndarray]],
                       hand_sizes: dict[str, float],
-                      min_separation: float) -> CalibrationResult:
+                      min_separation: float,
+                      dpad_threshold: float) -> CalibrationResult:
     """Crea la Calibration y comprueba su calidad.
 
     `samples[pose][mano]`: array (frames, 4) de thumb_position_features.
     """
     button = list(BUTTON_COLUMNS)
     dpad = list(DPAD_COLUMNS)
+    left_rest = Reference.from_samples(samples[Pose.REST]["left"][:, dpad])
+    left_dpad_left = Reference.from_samples(samples[Pose.DPAD_LEFT]["left"][:, dpad])
+    left_dpad_right = Reference.from_samples(samples[Pose.DPAD_RIGHT]["left"][:, dpad])
     calibration = Calibration(
         right_rest=Reference.from_samples(samples[Pose.REST]["right"][:, button]),
         right_pressed=Reference.from_samples(samples[Pose.A_PRESSED]["right"][:, button]),
-        left_rest=Reference.from_samples(samples[Pose.REST]["left"][:, dpad]),
-        left_dpad_left=Reference.from_samples(samples[Pose.DPAD_LEFT]["left"][:, dpad]),
-        left_dpad_right=Reference.from_samples(samples[Pose.DPAD_RIGHT]["left"][:, dpad]),
+        left_rest=left_rest,
+        left_rest_while_a=Reference.from_samples(samples[Pose.A_PRESSED]["left"][:, dpad]),
+        left_dpad_left=left_dpad_left,
+        left_dpad_right=left_dpad_right,
+        dpad=DpadGeometry.from_references(left_rest, left_dpad_left, left_dpad_right),
         left_hand_size=hand_sizes["left"],
         right_hand_size=hand_sizes["right"],
     )
-    problems = quality_problems(calibration, min_separation)
+    problems = quality_problems(calibration, min_separation, dpad_threshold)
     return CalibrationResult(None if problems else calibration, problems)
 
 
-def quality_problems(calibration: Calibration, min_separation: float) -> list[str]:
+def quality_problems(calibration: Calibration, min_separation: float,
+                     dpad_threshold: float) -> list[str]:
     """Mensajes para el jugador; lista vacía si la calibración es buena."""
     checks = [
         (calibration.right_rest, calibration.right_pressed,
@@ -202,9 +249,26 @@ def quality_problems(calibration: Calibration, min_separation: float) -> list[st
          "Cruceta: izquierda y derecha se parecen demasiado. Repite exagerando las dos."),
     ]
     problems = [message for a, b, message in checks if separation(a, b) < min_separation]
+    problems.extend(_left_thumb_drift_problems(calibration, dpad_threshold))
     if min(calibration.left_hand_size, calibration.right_hand_size) <= 0:
         problems.append("No se pudo medir el tamaño de la mano. Repite con las manos bien visibles.")
     return problems
+
+
+def _left_thumb_drift_problems(calibration: Calibration, dpad_threshold: float) -> list[str]:
+    """¿Se va el pulgar izquierdo, sin querer, hacia una dirección al pulsar A?
+
+    Se exige que la postura "izquierda en reposo mientras pulsas A" se quede por
+    debajo de la MITAD del umbral de la cruceta, para dejar margen.
+    """
+    progress = calibration.dpad.progress(calibration.left_rest_while_a.center)
+    names = {Button.LEFT: "izquierda", Button.RIGHT: "derecha"}
+    return [
+        f"Al pulsar A, tu pulgar izquierdo se mueve hacia '{names[button]}' "
+        f"({value:.0%} del recorrido). Repite la calibración marcando más la cruceta "
+        f"{names[button]} y dejando el pulgar izquierdo quieto al pulsar A."
+        for button, value in progress.items() if value >= dpad_threshold / 2
+    ]
 
 
 def _valid_features(landmarks: np.ndarray | None) -> np.ndarray | None:

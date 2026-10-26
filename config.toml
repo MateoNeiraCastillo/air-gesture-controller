@@ -15,7 +15,10 @@ min_separation = 3.0
 # La cruceta cuenta como pulsada cuando el pulgar ha recorrido esta fracción
 # del camino entre reposo y la dirección calibrada. 0.5 = a mitad de camino.
 # Más bajo: más sensible, pero más pulsaciones accidentales.
-dpad_threshold = 0.5
+# 0.3 medido con el spike: en el `combo` de día el pulgar solo hacía ~50 % del
+# recorrido calibrado (0.5 acertaba el 49 %, 0.3 el 98 %), y en reposo el
+# pulgar rara vez pasa de 0.2. La máquina de estados filtra los parpadeos.
+dpad_threshold = 0.3
 
 [posture]
 # Si el tamaño aparente de la mano se aleja de la calibración más allá de estos
