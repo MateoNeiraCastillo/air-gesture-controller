@@ -2,7 +2,7 @@
 
 **Pregunta:** ¿puede una webcam normal + MediaPipe distinguir un mando NES imaginario sostenido con las dos manos: cruceta con el pulgar izquierdo y botón A con el derecho?
 
-**Respuesta (sesión 1):** sí, con calibración al arrancar y CPU. Pendiente: medir la deriva entre sesiones.
+**Respuesta:** sí dentro de una sesión, con calibración al arrancar y CPU (confirmado en dos sesiones). Riesgo abierto para la Fase 2: si la mano gira durante el juego, las medidas cambian.
 
 ## Montaje
 
@@ -41,12 +41,32 @@ Calibración: los primeros 90 frames válidos (~3 s) de cada postura colocan los
 4. **En esta postura, la cruceta se ve sobre todo en vertical.** Con el puño vertical y el pulgar arriba, "izquierda" y "derecha" mueven la punta sobre todo en vertical. Solo con dx, derecha vs reposo daba 55 %; con las 4 features, 99 %.
 5. **La calibración tiene que esperar a ver la mano.** En `dpad_der`, la mano izquierda no se detectó durante los primeros segundos. Calibrar con "los primeros 3 s" dejaba la clase vacía, así que se calibra con los primeros N frames válidos.
 
+## Sesión 2 (día, luz natural)
+
+| Métrica | Noche | Día |
+|---|---|---|
+| Dos manos (CPU) | 98 % | 100 % |
+| Botón A calibrado | 100 % | 99,9 % |
+| `ritmo`: pulsaciones | 30 / 29 s | 23 / 29 s |
+| Cruceta calibrada | 99,1 % | 99,9 % |
+| `combo`: cruceta "derecha" | 100 % | 81 % |
+
+**Entre sesiones, sin recalibrar:** botón 53–62 %, cruceta 62–67 %, casi azar. **Decisión: calibración obligatoria cada vez que se empieza a jugar.**
+
+Los dos peores números del día tienen causa identificada:
+
+- **`ritmo` (23/29):** en ese clip el puño estaba girado mirando a la cámara. La escala (muñeca → base del medio) se proyecta casi en un punto (1–29 px en lugar de ~60) y las features se disparan.
+- **`combo` (81 %):** al hacer dos cosas a la vez, la cruceta "derecha" se empuja menos que en `dpad_der` y queda entre reposo y derecha.
+
+Probamos otras escalas (ancho de nudillos, máximo de ambas, píxeles) y coordenadas 3D de MediaPipe en ejes de la cámara y de la mano. Ninguna funcionó en las dos sesiones a la vez: arreglaban una y rompían la otra. Nos quedamos con la escala original, que es la mejor en conjunto.
+
 ## Limitaciones
 
-- Una sola sesión y una sola luz: no sabemos cuánto cambian los centroides si te quitas y vuelves a poner las manos, ni de un día para otro.
+- Cada clip es una postura aislada de 30 s. No sabemos cuánto deriva la postura durante varios minutos de juego seguido.
 - `dpad_der` tuvo un 12 % de frames sin la mano izquierda con CPU.
 
 ## Siguiente
 
-1. Segunda sesión con otra luz → la sección "entre sesiones" de `analyze.py` dice si basta una calibración o hay que recalibrar cada vez.
+1. Diseñar la Fase 2 para la deriva: calibración al arrancar; cruceta como dirección respecto al reposo con zona muerta (no "el centroide más cercano"); aviso visual si la mano gira (la escala cae respecto a la calibración); tecla para recalibrar.
+1b. Experimento realista: una grabación continua de 2–3 min mezclando acciones, para medir la deriva dentro de una sesión.
 2. Latencia: con ~38 ms por frame, el bucle no llega a los 30 fps de la cámara. La captura tiene que quedarse siempre con el frame más reciente (hilo de captura que descarta los viejos); si no, los frames se acumulan en el buffer y la latencia crece. Medir la latencia de punta a punta con el juego corriendo (Fase 3).
