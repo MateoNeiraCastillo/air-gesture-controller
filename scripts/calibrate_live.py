@@ -4,11 +4,13 @@
    cruceta derecha). Antes de cada una tienes 3 s para colocarte.
 2. Si la calibración no pasa el control de calidad, te dice por qué
    (en pantalla y en la terminal). Pulsa R para repetir.
-3. Si pasa, muestra en directo qué lee el clasificador:
-   - A: se ilumina cuando lo detecta pulsado.
+3. Si pasa, muestra en directo lo que haría el mando:
+   - A: aro naranja = el clasificador lo ve pulsado en este frame;
+        relleno verde = pulsación CONFIRMADA (lo que recibiría el juego).
    - Cruceta: una barra que va del reposo (centro) hacia izquierda o derecha.
-     La raya marca el umbral; al pasarla, la dirección se ilumina.
-   Prueba a pulsar A: la barra de la cruceta tiene que quedarse en el centro.
+     La raya blanca marca el umbral. IZQ/DER en verde = confirmado.
+   - Avisos del monitor de postura arriba, en rojo.
+   En la terminal se imprime cada pulsación y liberación confirmada.
 
 Teclas: R = recalibrar, Q = salir.
 
@@ -37,6 +39,8 @@ from air_controller.capture import FrameSource, LatestFrameCamera, VideoFileSour
 from air_controller.classifier import Classifier, FrameReading
 from air_controller.config import Config, load_config
 from air_controller.hands import assign_hands
+from air_controller.posture import PostureMonitor
+from air_controller.state_machine import ButtonStateMachine
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = ROOT / "models" / "hand_landmarker.task"
@@ -134,16 +138,18 @@ def draw_progress(image: np.ndarray, fraction: float, y: int) -> None:
     cv2.rectangle(image, (20, y), (20 + int(width * min(fraction, 1.0)), y + 14), GREEN, -1)
 
 
-def draw_reading(image: np.ndarray, reading: FrameReading, threshold: float) -> None:
-    """Panel inferior: botón A y barra de la cruceta."""
+def draw_reading(image: np.ndarray, reading: FrameReading, threshold: float,
+                 held: frozenset[Button]) -> None:
+    """Panel inferior: botón A y barra de la cruceta. `held` = confirmados."""
     height, width = image.shape[:2]
     top = height - 90
     cv2.rectangle(image, (0, top), (width, height), (30, 30, 30), -1)
 
     # Botón A
-    a_on = Button.A in reading.pressed
     center = (width - 60, top + 45)
-    cv2.circle(image, center, 28, GREEN if a_on else GRAY, -1 if a_on else 2)
+    if Button.A in held:
+        cv2.circle(image, center, 28, GREEN, -1)
+    cv2.circle(image, center, 28, ORANGE if Button.A in reading.pressed else GRAY, 3)
     put_lines(image, ["A"], (center[0] - 9, center[1] + 8), WHITE, 0.8)
     if not reading.right_visible:
         put_lines(image, ["sin mano der."], (width - 130, top + 85), RED, 0.45)
@@ -168,8 +174,8 @@ def draw_reading(image: np.ndarray, reading: FrameReading, threshold: float) -> 
         cv2.circle(image, (int(np.clip(x, bar_left, bar_right)), y), 10, GREEN if lit else ORANGE, -1)
     else:
         put_lines(image, ["sin mano izq."], (bar_left, top + 85), RED, 0.45)
-    put_lines(image, ["IZQ"], (bar_left - 5, top + 20), GREEN if Button.LEFT in reading.pressed else GRAY, 0.5)
-    put_lines(image, ["DER"], (bar_right - 30, top + 20), GREEN if Button.RIGHT in reading.pressed else GRAY, 0.5)
+    put_lines(image, ["IZQ"], (bar_left - 5, top + 20), GREEN if Button.LEFT in held else GRAY, 0.5)
+    put_lines(image, ["DER"], (bar_right - 30, top + 20), GREEN if Button.RIGHT in held else GRAY, 0.5)
     put_lines(image, ["R = recalibrar   Q = salir"], (bar_left + 120, top + 85), GRAY, 0.45)
 
 
@@ -189,8 +195,12 @@ class LiveCalibration:
         self.pose_started_at: float | None = None
         self.current_pose: Pose | None = None
         self.readings: list[FrameReading] = []
+        self.machine = ButtonStateMachine(config.timing)
+        self.posture: PostureMonitor | None = None
+        self.last_timestamp_ms = 0
 
     def restart(self) -> None:
+        self._log_events(self.machine.release_all(self.last_timestamp_ms))
         self.collector = CalibrationCollector(self.config.calibration.frames_per_pose)
         self.result = None
         self.classifier = None
@@ -203,6 +213,7 @@ class LiveCalibration:
         if frame is None:
             return False
         image = frame.image
+        self.last_timestamp_ms = frame.timestamp_ms
         left, right = detect_hands(self.landmarker, image, frame.timestamp_ms)
         draw_hands(image, left, right)
 
@@ -211,7 +222,11 @@ class LiveCalibration:
         elif self.result.ok:
             reading = self.classifier.classify(left, right)
             self.readings.append(reading)
-            draw_reading(image, reading, self.config.classifier.dpad_threshold)
+            self._log_events(self.machine.update(reading, frame.timestamp_ms))
+            draw_reading(image, reading, self.config.classifier.dpad_threshold, self.machine.held)
+            warnings = self.posture.update(left, right, frame.timestamp_ms)
+            if warnings:
+                put_lines(image, [line for w in warnings for line in wrap(w)], (15, 30), RED)
         else:
             lines = ["CALIBRACION RECHAZADA"]
             for problem in self.result.problems:
@@ -246,6 +261,8 @@ class LiveCalibration:
                                            self.config.classifier.dpad_threshold)
         if self.result.ok:
             self.classifier = Classifier(self.result.calibration, self.config.classifier)
+            self.posture = PostureMonitor(self.result.calibration, self.config.posture)
+            self.machine = ButtonStateMachine(self.config.timing)
             progress = self.result.calibration.dpad.progress(
                 self.result.calibration.left_rest_while_a.center)
             print("Calibración ACEPTADA.")
@@ -278,7 +295,13 @@ class LiveCalibration:
             self.restart()
         return True
 
+    def _log_events(self, events) -> None:
+        for event in events:
+            action = "PULSA " if event.pressed else "suelta"
+            print(f"  {event.timestamp_ms / 1000:8.2f} s  {action} {event.button.value}")
+
     def close(self) -> None:
+        self._log_events(self.machine.release_all(self.last_timestamp_ms))
         self.source.close()
         self.landmarker.close()
         if self.show:

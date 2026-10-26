@@ -116,8 +116,12 @@ class Calibration:
     left_dpad_left: Reference     # columnas DPAD_COLUMNS
     left_dpad_right: Reference    # columnas DPAD_COLUMNS
     dpad: DpadGeometry
-    left_hand_size: float         # píxeles; para avisar si la mano gira o se aleja
+    left_hand_size: float         # píxeles (mediana); para avisar si la mano gira o se aleja
     right_hand_size: float
+    # Rango de tamaños (mediana de cada postura): la mano puede inclinarse algo al
+    # mover el pulgar (en el spike de día, la izquierda iba del 77 % al 130 %).
+    left_size_range: tuple[float, float] = (0.0, 0.0)
+    right_size_range: tuple[float, float] = (0.0, 0.0)
 
 
 @dataclass(frozen=True)
@@ -159,7 +163,9 @@ class CalibrationCollector:
         self._features: dict[Pose, dict[str, list[np.ndarray]]] = {
             pose: {"left": [], "right": []} for pose in CALIBRATION_SEQUENCE
         }
-        self._hand_sizes: dict[str, list[float]] = {"left": [], "right": []}
+        self._hand_sizes: dict[Pose, dict[str, list[float]]] = {
+            pose: {"left": [], "right": []} for pose in CALIBRATION_SEQUENCE
+        }
 
     @property
     def done(self) -> bool:
@@ -189,7 +195,7 @@ class CalibrationCollector:
         for name in REQUIRED_HANDS[pose]:
             self._features[pose][name].append(hands[name])
             landmarks = left if name == "left" else right
-            self._hand_sizes[name].append(hand_size(landmarks))
+            self._hand_sizes[pose][name].append(hand_size(landmarks))
         if len(self._features[pose][REQUIRED_HANDS[pose][0]]) >= self.frames_per_pose:
             self._step += 1
         return True
@@ -197,19 +203,21 @@ class CalibrationCollector:
     def build(self, min_separation: float, dpad_threshold: float) -> CalibrationResult:
         if not self.done:
             return CalibrationResult(None, ["La calibración no ha terminado."])
-        return build_calibration(self.samples(), self._median_sizes(), min_separation, dpad_threshold)
+        return build_calibration(self.samples(), self.hand_sizes(), min_separation, dpad_threshold)
 
     def samples(self) -> dict[Pose, dict[str, np.ndarray]]:
         """Features recogidas hasta ahora: postura → mano → array (frames, 4)."""
         return {pose: {hand: np.array(rows) for hand, rows in by_hand.items() if rows}
                 for pose, by_hand in self._features.items()}
 
-    def _median_sizes(self) -> dict[str, float]:
-        return {hand: float(np.median(sizes)) for hand, sizes in self._hand_sizes.items()}
+    def hand_sizes(self) -> dict[Pose, dict[str, np.ndarray]]:
+        """Tamaños de mano recogidos: postura → mano → array de píxeles."""
+        return {pose: {hand: np.array(sizes) for hand, sizes in by_hand.items() if sizes}
+                for pose, by_hand in self._hand_sizes.items()}
 
 
 def build_calibration(samples: dict[Pose, dict[str, np.ndarray]],
-                      hand_sizes: dict[str, float],
+                      hand_sizes: dict[Pose, dict[str, np.ndarray]],
                       min_separation: float,
                       dpad_threshold: float) -> CalibrationResult:
     """Crea la Calibration y comprueba su calidad.
@@ -229,8 +237,10 @@ def build_calibration(samples: dict[Pose, dict[str, np.ndarray]],
         left_dpad_left=left_dpad_left,
         left_dpad_right=left_dpad_right,
         dpad=DpadGeometry.from_references(left_rest, left_dpad_left, left_dpad_right),
-        left_hand_size=hand_sizes["left"],
-        right_hand_size=hand_sizes["right"],
+        left_hand_size=_median_size(hand_sizes, "left"),
+        right_hand_size=_median_size(hand_sizes, "right"),
+        left_size_range=_size_range(hand_sizes, "left"),
+        right_size_range=_size_range(hand_sizes, "right"),
     )
     problems = quality_problems(calibration, min_separation, dpad_threshold)
     return CalibrationResult(None if problems else calibration, problems)
@@ -254,6 +264,16 @@ def quality_problems(calibration: Calibration, min_separation: float,
     if min(calibration.left_hand_size, calibration.right_hand_size) <= 0:
         problems.append("No se pudo medir el tamaño de la mano. Repite con las manos bien visibles.")
     return problems
+
+
+def _median_size(hand_sizes: dict[Pose, dict[str, np.ndarray]], hand: str) -> float:
+    values = [sizes[hand] for sizes in hand_sizes.values() if hand in sizes]
+    return float(np.median(np.concatenate(values))) if values else 0.0
+
+
+def _size_range(hand_sizes: dict[Pose, dict[str, np.ndarray]], hand: str) -> tuple[float, float]:
+    medians = [float(np.median(sizes[hand])) for sizes in hand_sizes.values() if hand in sizes]
+    return (min(medians), max(medians)) if medians else (0.0, 0.0)
 
 
 def _left_thumb_drift_problems(calibration: Calibration, dpad_threshold: float) -> list[str]:

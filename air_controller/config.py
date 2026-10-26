@@ -35,6 +35,7 @@ class ClassifierConfig:
 class PostureConfig:
     hand_size_ratio_min: float  # tamaño de mano / tamaño calibrado por debajo → aviso
     hand_size_ratio_max: float  # por encima → aviso
+    warning_after_ms: float     # tiempo fuera de rango antes de avisar (evita avisos por ruido)
 
 
 @dataclass(frozen=True)
@@ -98,10 +99,11 @@ def _parse_classifier(section: dict[str, Any]) -> ClassifierConfig:
 
 
 def _parse_posture(section: dict[str, Any]) -> PostureConfig:
-    _check_keys(section, {"hand_size_ratio_min", "hand_size_ratio_max"}, "posture")
+    _check_keys(section, {"hand_size_ratio_min", "hand_size_ratio_max", "warning_after_ms"}, "posture")
     low = _number_in_range(section, "hand_size_ratio_min", "posture", 0.1, 1.0)
     high = _number_in_range(section, "hand_size_ratio_max", "posture", 1.0, 5.0)
-    return PostureConfig(hand_size_ratio_min=low, hand_size_ratio_max=high)
+    delay = _number_in_range(section, "warning_after_ms", "posture", 0, 5000)
+    return PostureConfig(hand_size_ratio_min=low, hand_size_ratio_max=high, warning_after_ms=delay)
 
 
 def _parse_timing(section: dict[str, Any]) -> TimingConfig:

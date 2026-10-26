@@ -8,7 +8,7 @@ from air_controller.config import ConfigError, load_config, parse_config
 VALID = {
     "calibration": {"frames_per_pose": 90, "min_separation": 3.0},
     "classifier": {"dpad_threshold": 0.5},
-    "posture": {"hand_size_ratio_min": 0.7, "hand_size_ratio_max": 1.4},
+    "posture": {"hand_size_ratio_min": 0.7, "hand_size_ratio_max": 1.4, "warning_after_ms": 500},
     "timing": {"press_confirm_ms": 80, "release_confirm_ms": 80, "missing_hand_ms": 200},
     "keys": {"left": "left", "right": "right", "a": "up"},
 }

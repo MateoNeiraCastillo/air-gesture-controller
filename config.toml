@@ -25,6 +25,8 @@ dpad_threshold = 0.3
 # límites (porque la mano ha girado o te has acercado o alejado), se avisa.
 hand_size_ratio_min = 0.7
 hand_size_ratio_max = 1.4
+# Tiempo seguido fuera de rango antes de avisar: un frame raro no debe saltar.
+warning_after_ms = 500
 
 [timing]
 # Tiempo que un botón tiene que verse pulsado antes de enviar la tecla.
