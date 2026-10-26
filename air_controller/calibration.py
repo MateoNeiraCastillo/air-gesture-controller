@@ -197,9 +197,10 @@ class CalibrationCollector:
     def build(self, min_separation: float, dpad_threshold: float) -> CalibrationResult:
         if not self.done:
             return CalibrationResult(None, ["La calibración no ha terminado."])
-        return build_calibration(self._samples(), self._median_sizes(), min_separation, dpad_threshold)
+        return build_calibration(self.samples(), self._median_sizes(), min_separation, dpad_threshold)
 
-    def _samples(self) -> dict[Pose, dict[str, np.ndarray]]:
+    def samples(self) -> dict[Pose, dict[str, np.ndarray]]:
+        """Features recogidas hasta ahora: postura → mano → array (frames, 4)."""
         return {pose: {hand: np.array(rows) for hand, rows in by_hand.items() if rows}
                 for pose, by_hand in self._features.items()}
 
