@@ -67,7 +67,9 @@ def countdown(camera: cv2.VideoCapture, label: str) -> bool:
     return True
 
 
-def record(camera: cv2.VideoCapture, path: Path, seconds: float) -> int:
+def record(camera: cv2.VideoCapture, path: Path, seconds: float) -> int | None:
+    """Graba hasta `seconds`. Si se pulsa 'q', borra la toma y devuelve None:
+    un clip a medias contaminaría el análisis."""
     ok, frame = camera.read()
     if not ok:
         raise RuntimeError("La cámara no devuelve frames.")
@@ -75,6 +77,7 @@ def record(camera: cv2.VideoCapture, path: Path, seconds: float) -> int:
     fps = camera.get(cv2.CAP_PROP_FPS) or 30.0
     writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
     frames_written = 0
+    cancelled = False
     start = time.perf_counter()
     try:
         while (elapsed := time.perf_counter() - start) < seconds:
@@ -84,9 +87,13 @@ def record(camera: cv2.VideoCapture, path: Path, seconds: float) -> int:
             writer.write(frame)
             frames_written += 1
             if show_preview(frame, f"REC {elapsed:4.1f}/{seconds:.0f} s", (0, 0, 255)):
+                cancelled = True
                 break
     finally:
         writer.release()
+    if cancelled:
+        path.unlink(missing_ok=True)
+        return None
     return frames_written
 
 
@@ -102,6 +109,9 @@ def main() -> None:
     finally:
         camera.release()
         cv2.destroyAllWindows()
+    if frames is None:
+        print("Toma cancelada con 'q': no se guardó nada.")
+        return
     print(f"Guardado {path.name}: {frames} frames")
 
 
