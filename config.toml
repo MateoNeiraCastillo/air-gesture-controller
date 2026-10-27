@@ -30,10 +30,14 @@ warning_after_ms = 500
 
 [timing]
 # Tiempo que un botón tiene que verse pulsado antes de enviar la tecla.
-# ~2 frames a 25 fps. Bajarlo da menos retraso y más pulsaciones fantasma.
-press_confirm_ms = 80
+# En la práctica se redondea a frames: exige ver el botón en 2 frames seguidos.
+# Medido en la sesión guiada (bucle a ~15 fps): sin confirmación (0) se cuelan
+# pulsaciones fantasma (toques exactos 78 %); con 40, 60 u 80 ms el acierto es
+# el mismo (100 %) y el retraso lo marca el ritmo de frames. 40 da menos
+# retraso en cuanto el bucle vaya más rápido.
+press_confirm_ms = 40
 # Tiempo que tiene que verse soltado antes de soltar la tecla.
-release_confirm_ms = 80
+release_confirm_ms = 40
 # Tiempo sin ver una mano antes de soltar sus botones. Cubre los parpadeos de
 # detección (~2-5 % de frames en el spike) sin dejar teclas pegadas.
 missing_hand_ms = 200

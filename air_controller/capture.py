@@ -24,6 +24,7 @@ import numpy as np
 class Frame:
     image: np.ndarray       # BGR, ya en espejo
     timestamp_ms: int       # estrictamente creciente
+    captured_s: float = 0.0 # time.perf_counter() al recibirlo de la cámara (latencia)
 
 
 class FrameSource(Protocol):
@@ -52,13 +53,14 @@ class LatestFrameCamera:
     def _loop(self) -> None:
         while self._running:
             ok, image = self._capture.read()
+            captured_s = time.perf_counter()
             if not ok:
                 continue
             timestamp_ms = max(int((time.perf_counter() - self._start) * 1000),
                                self._last_timestamp_ms + 1)
             self._last_timestamp_ms = timestamp_ms
             with self._lock:
-                self._latest = Frame(cv2.flip(image, 1), timestamp_ms)
+                self._latest = Frame(cv2.flip(image, 1), timestamp_ms, captured_s)
             self._new_frame.set()
 
     def read(self) -> Frame | None:
@@ -87,7 +89,7 @@ class VideoFileSource:
         ok, image = self._capture.read()
         if not ok:
             return None
-        frame = Frame(cv2.flip(image, 1), int(self._index * 1000 / self._fps))
+        frame = Frame(cv2.flip(image, 1), int(self._index * 1000 / self._fps), time.perf_counter())
         self._index += 1
         return frame
 
