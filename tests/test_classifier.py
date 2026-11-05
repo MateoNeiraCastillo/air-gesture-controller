@@ -32,13 +32,13 @@ PLAN = [(Pose.REST, REST, REST), (Pose.A_PRESSED, REST, PRESSED), (Pose.B_PRESSE
         (Pose.DPAD_LEFT, DPAD_LEFT, REST), (Pose.DPAD_RIGHT, DPAD_RIGHT, REST)]
 
 
-def build_classifier(collector: CalibrationCollector) -> Classifier:
+def build_classifier(collector: CalibrationCollector, button_threshold: float = 0.5) -> Classifier:
     for pose, left_tip, right_tip in PLAN:
         while collector.current_pose is pose:
             collector.add(make_hand(*left_tip), make_hand(*right_tip))
     result = collector.build(min_separation=3.0, dpad_threshold=0.5)
     assert result.ok, result.problems
-    return Classifier(result.calibration, ClassifierConfig(dpad_threshold=0.5))
+    return Classifier(result.calibration, ClassifierConfig(dpad_threshold=0.5, button_threshold=button_threshold))
 
 
 @pytest.fixture(scope="module")
@@ -148,3 +148,27 @@ def test_sideways_drift_of_the_right_thumb_does_not_press_a() -> None:
     assert Button.A not in classifier.classify(left_hand, right).pressed
     # Pushing down still presses A.
     assert Button.A in classifier.classify(left_hand, make_hand(0.45 * 100 + 10, 0.10 * 100, noise=0)).pressed
+
+
+def test_b_wins_when_the_outward_tilt_also_lowers_the_thumb(classifier: Classifier) -> None:
+    """05-11: tilting outwards for B also lowered the tip (60–97 % of the way to A)."""
+    outwards_and_down = make_hand(B_PRESSED[0], PRESSED[1])
+    assert classifier.classify(make_hand(*REST), outwards_and_down).pressed == {Button.B}
+
+
+def test_b_needs_the_downward_part_when_the_calibrated_b_has_it() -> None:
+    """05-11 game 3: the relaxed thumb wandered outwards without going down (fake B)."""
+    plan = [(Pose.REST, REST, REST), (Pose.A_PRESSED, REST, PRESSED), (Pose.B_PRESSED, REST, (100, -15)),
+            (Pose.DPAD_LEFT, DPAD_LEFT, REST), (Pose.DPAD_RIGHT, DPAD_RIGHT, REST)]
+    collector = CalibrationCollector(frames_per_pose=FRAMES)
+    for pose, left_tip, right_tip in plan:
+        while collector.current_pose is pose:
+            collector.add(make_hand(*left_tip), make_hand(*right_tip))
+    result = collector.build(min_separation=3.0, dpad_threshold=0.5)
+    assert result.ok, result.problems
+    classifier = Classifier(result.calibration, ClassifierConfig(dpad_threshold=0.5, button_threshold=0.4,
+                                                                 b_threshold=0.6, b_down_fraction=0.4))
+    left = make_hand(*REST)
+    assert Button.B not in classifier.classify(left, make_hand(95, -40, noise=0)).pressed     # out, not down
+    assert classifier.classify(left, make_hand(100, -15, noise=0)).pressed == {Button.B}       # like calibrated
+    assert classifier.classify(left, make_hand(90, -28, noise=0)).pressed == {Button.B}        # lighter, same shape

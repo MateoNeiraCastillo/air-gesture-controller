@@ -7,8 +7,23 @@ machine (layer 4).
 - Buttons A and B (right thumb): each one on its own axis. A: is the tip's height
   closer to "A pressed" (thumb down) than to rest? B: is its sideways position
   closer to "B pressed" (thumb outwards) than to rest? Distances measured in
-  noise widths. With a single thumb, A and B exclude each other: if both look
-  pressed, the clearer one wins (in Celeste you jump and then dash).
+  noise widths, as progress along the rest → pressed axis: 0 = calibrated rest,
+  1 = calibrated press, and it keeps growing past 1 when you press deeper (in a
+  real game, presses reached 1.2–2.8). Pressed once the thumb is
+  `button_threshold` of the calibrated travel past the current rest. With a
+  single thumb, A and B exclude each other, and **B wins** when both look
+  pressed: tilting the thumb outwards also lowers its tip (in the 05-11
+  calibrations the B pose was 60–97 % of the way to A), while pressing A moves
+  it clearly inwards (−1.4 and −2.0 along B). With "the clearer one wins", up to
+  18 % of the tilts were read as A.
+  B also has to look like YOUR calibrated B: `b_threshold` of the way outwards
+  AND, if your B lowers the thumb, `b_down_fraction` of that lowering. A relaxed
+  thumb wanders outwards without going down; with "outwards only", 18 of 28 B
+  presses in a real game were that wandering (05-11, game 3). Requiring both:
+  11 B presses, and all 11 moments with the calibrated B shape still caught.
+  `rest_offsets` moves where "rest" is, for a thumb that rests differently while
+  playing than while calibrating (see rest_tracker.py); without it, the
+  calibrated rest is used.
 - D-pad, in two steps:
     1. Direction: the nearest calibrated pose (left or right).
     2. Intensity: how far the thumb has moved from rest towards it.
@@ -20,12 +35,13 @@ machine (layer 4).
   point progressed 3 times further along right's short axis.
 """
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from air_controller.buttons import Button
-from air_controller.calibration import A_COLUMNS, B_COLUMNS, DPAD_COLUMNS, Calibration, Reference
+from air_controller.calibration import A_COLUMNS, B_COLUMNS, DPAD_COLUMNS, Calibration, Reference, axis_progress
 from air_controller.config import ClassifierConfig
 from air_controller.features import thumb_position_features
 
@@ -40,6 +56,9 @@ class FrameReading:
     dpad_left_progress: float    # 0 = rest, 1 = as in calibration; NaN if not visible
     dpad_right_progress: float
     dpad_direction: Button | None = None   # nearest calibrated direction; None if not visible
+    # Right-thumb progress towards A and B (0 = calibrated rest, 1 = pressed), before any
+    # rest offset; empty if the right hand is not visible.
+    thumb_progress: Mapping[Button, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -71,24 +90,40 @@ class ThumbButton:
         to_pressed = np.linalg.norm((point - self.pressed.center[list(self.columns)]) / scale)
         return float(to_rest - to_pressed)
 
+    def progress(self, features: np.ndarray) -> float:
+        """Position along rest → pressed: 0 at the calibrated rest, 1 at the calibrated
+        press, above 1 when pressing deeper. Measured in noise widths, like the margin."""
+        return axis_progress(self.rest, self.pressed, self.columns, features)
+
 
 class Classifier:
     def __init__(self, calibration: Calibration, config: ClassifierConfig) -> None:
         self._calibration = calibration
         self._threshold = config.dpad_threshold
+        self._button_threshold = config.button_threshold
+        self._b_threshold = config.b_threshold
+        self._b_down_fraction = config.b_down_fraction
+        # How far towards A (down) the calibrated B pose goes: 0.6–0.97 for the 05-11 player.
+        self._b_down = (axis_progress(calibration.right_rest, calibration.right_a, A_COLUMNS,
+                                      calibration.right_b.center)
+                        if calibration.right_b is not None else 0.0)
         self._thumb_buttons = [ThumbButton(Button.A, A_COLUMNS, calibration.right_rest, calibration.right_a)]
         if calibration.right_b is not None:
             self._thumb_buttons.append(
                 ThumbButton(Button.B, B_COLUMNS, calibration.right_rest, calibration.right_b))
 
-    def classify(self, left: np.ndarray | None, right: np.ndarray | None) -> FrameReading:
-        """`left`/`right`: landmarks (21, 3) in pixels, or None if the hand is not visible."""
+    def classify(self, left: np.ndarray | None, right: np.ndarray | None,
+                 rest_offsets: Mapping[Button, float] | None = None) -> FrameReading:
+        """`left`/`right`: landmarks (21, 3) in pixels, or None if the hand is not visible.
+        `rest_offsets`: where the thumb's rest is now, as progress (0 = calibrated rest)."""
         pressed: set[Button] = set()
         left_features = _features(left)
         right_features = _features(right)
 
+        thumb_progress: dict[Button, float] = {}
         if right_features is not None:
-            button = self._right_button(right_features)
+            thumb_progress = {thumb.button: thumb.progress(right_features) for thumb in self._thumb_buttons}
+            button = self._right_button(thumb_progress, rest_offsets or {})
             if button is not None:
                 pressed.add(button)
 
@@ -108,14 +143,31 @@ class Classifier:
             dpad_left_progress=progress[Button.LEFT],
             dpad_right_progress=progress[Button.RIGHT],
             dpad_direction=nearest,
+            thumb_progress=thumb_progress,
         )
 
-    def _right_button(self, features: np.ndarray) -> Button | None:
+
+    def _right_button(self, progress: Mapping[Button, float],
+                      rest_offsets: Mapping[Button, float]) -> Button | None:
         """The pressed right-thumb button (None = rest). One thumb: at most one button,
-        the one the thumb has moved most clearly towards."""
-        margins = {thumb.button: thumb.margin(features) for thumb in self._thumb_buttons}
-        best = max(margins, key=margins.get)
-        return best if margins[best] > 0 else None
+        and B first (tilting outwards also lowers the tip, pressing A never goes outwards)."""
+        if Button.B in progress and self._looks_like_b(progress):
+            return Button.B
+        if progress[Button.A] - rest_offsets.get(Button.A, 0.0) >= self._button_threshold:
+            return Button.A
+        return None
+
+    def _looks_like_b(self, progress: Mapping[Button, float]) -> bool:
+        """Outwards enough, and down like the calibrated B (measured from the calibrated rest)."""
+        if progress[Button.B] < self._b_threshold:
+            return False
+        if self._b_down < MIN_B_DOWN:          # this player's B doesn't lower the thumb
+            return True
+        return progress[Button.A] >= self._b_down_fraction * self._b_down
+
+
+# Below this, the calibrated B barely lowers the thumb and only "outwards" is required.
+MIN_B_DOWN = 0.2
 
 
 def _features(landmarks: np.ndarray | None) -> np.ndarray | None:

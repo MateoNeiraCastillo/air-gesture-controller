@@ -54,6 +54,7 @@ from air_controller.dashboard import (
 )
 from air_controller.hands import assign_hands
 from air_controller.posture import PostureMonitor
+from air_controller.rest_tracker import AdaptiveClassifier, RestTracker
 from air_controller.state_machine import ButtonStateMachine
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -186,7 +187,7 @@ class LiveCalibration:
                 step=len(CALIBRATION_SEQUENCE),
                 left_seen=left is not None, right_seen=right is not None))
         else:
-            reading = self.classifier.classify(left, right)
+            reading = self.classifier.classify(left, right, frame.timestamp_ms)
             self.readings.append(reading)
             events = self.machine.update(reading, frame.timestamp_ms)
             self._log_events(events)
@@ -249,7 +250,8 @@ class LiveCalibration:
         self.result = self.collector.build(self.config.calibration.min_separation,
                                            self.config.classifier.dpad_threshold)
         if self.result.ok:
-            self.classifier = Classifier(self.result.calibration, self.config.classifier)
+            self.classifier = AdaptiveClassifier(Classifier(self.result.calibration, self.config.classifier),
+                                                 RestTracker.from_config(self.config.classifier))
             self.posture = PostureMonitor(self.result.calibration, self.config.posture)
             self.machine = ButtonStateMachine(self.config.timing)
             self.presses.clear()

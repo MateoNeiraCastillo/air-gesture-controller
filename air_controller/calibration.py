@@ -274,6 +274,22 @@ def build_calibration(samples: dict[Pose, dict[str, np.ndarray]],
     return CalibrationResult(None if problems else calibration, problems)
 
 
+def axis_progress(rest: Reference, pressed: Reference, columns: tuple[int, ...],
+                  features: np.ndarray) -> float:
+    """Position of `features` along rest → pressed on `columns`, in noise widths:
+    0 at rest, 1 at the calibrated press, above 1 when going further."""
+    cols = list(columns)
+    scale = np.sqrt((rest.spread[cols] ** 2 + pressed.spread[cols] ** 2) / 2)
+    origin = rest.center[cols] / scale
+    axis = pressed.center[cols] / scale - origin
+    return float((features[cols] / scale - origin) @ axis / max(float(axis @ axis), 1e-12))
+
+
+# Pressing A must not move the right thumb outwards: B wins whenever the thumb is
+# outwards (see classifier.py), so an A press that drifts outwards would become B.
+A_OUTWARDS_LIMIT = 0.2
+
+
 def quality_problems(calibration: Calibration, min_separation: float,
                      dpad_threshold: float) -> list[str]:
     """Messages for the player; empty list if the calibration is good."""
@@ -295,6 +311,12 @@ def quality_problems(calibration: Calibration, min_separation: float,
              "Buttons A and B: they look too similar. Repeat: A downwards, B outwards."),
         ]
     problems = [message for a, b, message in checks if separation(a, b) < min_separation]
+    if calibration.right_b is not None:
+        outwards = axis_progress(calibration.right_rest, calibration.right_b, B_COLUMNS,
+                                 calibration.right_a.center)
+        if outwards >= A_OUTWARDS_LIMIT:
+            problems.append(f"Button A: your right thumb also moves outwards ({outwards:.0%} of the way to B), "
+                            "so A could be read as B. Repeat, pressing A straight down.")
     problems.extend(_left_thumb_drift_problems(calibration, dpad_threshold))
     if min(calibration.left_hand_size, calibration.right_hand_size) <= 0:
         problems.append("Could not measure hand size. Repeat with your hands clearly visible.")

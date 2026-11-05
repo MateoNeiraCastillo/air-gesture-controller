@@ -19,6 +19,28 @@ min_separation = 3.0
 # ~50 % of the calibrated travel (0.5 got 49 % right, 0.3 got 98 %), and at rest
 # the thumb rarely goes past 0.2. The state machine filters out flickers.
 dpad_threshold = 0.3
+# Button A counts as pressed once the right thumb has moved this fraction of the
+# calibrated travel past its current rest.
+button_threshold = 0.4
+# Button B: this fraction of the calibrated outward tilt...
+b_threshold = 0.6
+# ...and, if your calibrated B also lowers the thumb, this fraction of that
+# lowering. A relaxed thumb wanders outwards without going down: with
+# "outwards only" (0.4), 18 of 28 B presses in a real game were that wandering.
+# With 0.6 and 0.4: 11 B presses, every real B shape still caught (11/11).
+b_down_fraction = 0.4
+# Re-learn where the right thumb rests while you play (button A). In two
+# Celeste games the relaxed thumb crept to 0.6–1.0 of the calibrated A press
+# (the fist rolled, the thumb relaxed): A was "held" up to 81–94 % of the time.
+# Re-learning the rest over the last 5 s kept it at 11–47 %. See
+# air_controller/rest_tracker.py. 0 turns it off: do that for games where you
+# hold A or B for seconds.
+rest_window_ms = 5000
+# The rest is this low percentile of the thumb's recent positions (presses are short).
+rest_percentile = 20
+# The rest never moves more than this fraction of the way to the calibrated press.
+# Real presses go deeper than that (1.2–2.8 in those games), so they still count.
+rest_max_shift = 0.8
 
 [posture]
 # If the apparent hand size drifts from the calibration beyond these limits
@@ -52,6 +74,8 @@ b = "down"
 
 # Per-game profiles: only the listed keys change; the rest come from [keys].
 # Usage: python scripts/play.py --game celeste
+# A profile can also set rest_window_ms (see [classifier]), e.g. rest_window_ms = 0
+# for a game where you hold A or B for more than ~4 s, like an accelerator.
 [games.celeste]
 # Celeste Classic (PICO-8, browser): arrows to move, C (or Z) jumps, X dashes.
 a = "c"

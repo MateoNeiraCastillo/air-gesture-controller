@@ -154,3 +154,10 @@ def test_sequence_without_b_skips_the_pose_and_disables_b() -> None:
     result = collector.build(min_separation=3.0, dpad_threshold=0.5)
     assert result.ok, result.problems
     assert result.calibration.right_b is None
+
+
+def test_a_press_that_drifts_outwards_is_rejected() -> None:
+    """B wins whenever the thumb is outwards, so an outward A would be read as B."""
+    result = calibrate(pressed=(75, 10)).build(min_separation=3.0, dpad_threshold=0.5)
+    assert not result.ok
+    assert any("Button A" in problem and "outwards" in problem for problem in result.problems)

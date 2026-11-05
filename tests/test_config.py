@@ -3,11 +3,11 @@ import copy
 import pytest
 
 from air_controller.buttons import Button
-from air_controller.config import ConfigError, keys_for_game, load_config, parse_config
+from air_controller.config import ConfigError, config_for_game, keys_for_game, load_config, parse_config
 
 VALID = {
     "calibration": {"frames_per_pose": 90, "min_separation": 3.0},
-    "classifier": {"dpad_threshold": 0.5},
+    "classifier": {"dpad_threshold": 0.5, "button_threshold": 0.5, "b_threshold": 0.6, "b_down_fraction": 0.4, "rest_window_ms": 5000, "rest_percentile": 20, "rest_max_shift": 0.8},
     "posture": {"hand_size_ratio_min": 0.7, "hand_size_ratio_max": 1.4, "warning_after_ms": 500},
     "timing": {"press_confirm_ms": 80, "release_confirm_ms": 80, "missing_hand_ms": 200},
     "keys": {"left": "left", "right": "right", "a": "up", "b": "down"},
@@ -113,3 +113,15 @@ def test_repository_game_profiles_are_valid() -> None:
     config = load_config()
     assert keys_for_game(config, "celeste")[Button.A] == "c"
     assert keys_for_game(config, "celeste")[Button.B] == "x"
+
+
+def test_a_game_profile_can_turn_off_rest_relearning() -> None:
+    config = parse_config(with_games({"kart": {"a": "up", "rest_window_ms": 0}, "celeste": {"a": "c"}}))
+    assert config_for_game(config, "kart").classifier.rest_window_ms == 0
+    assert config_for_game(config, "celeste").classifier.rest_window_ms == 5000   # from [classifier]
+    assert config_for_game(config, None) is config
+
+
+def test_game_rest_window_is_validated() -> None:
+    with pytest.raises(ConfigError, match="games.kart"):
+        parse_config(with_games({"kart": {"rest_window_ms": -1}}))

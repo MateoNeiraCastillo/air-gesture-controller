@@ -7,7 +7,7 @@ of a game.
 """
 
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +29,12 @@ class CalibrationConfig:
 @dataclass(frozen=True)
 class ClassifierConfig:
     dpad_threshold: float       # fraction of the calibrated travel that counts as pressed
+    button_threshold: float = 0.5  # A: travel past the current rest that counts as pressed
+    b_threshold: float = 0.5       # B: fraction of the calibrated outward tilt
+    b_down_fraction: float = 0.0   # B: fraction of the calibrated B's lowering also required
+    rest_window_ms: float = 0   # re-learn the right thumb's rest over this window; 0 = off
+    rest_percentile: float = 20  # the rest is this low percentile of the recent progress
+    rest_max_shift: float = 0.8  # the rest never moves further than this from the calibration
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,8 @@ class Config:
     # Per-game profiles ([games.<name>] in the TOML): the complete key map of
     # each game, already merged with [keys] and validated.
     games: dict[str, dict[Button, str]] = field(default_factory=dict)
+    # Per-game rest re-learning window (ms), only for profiles that set rest_window_ms.
+    game_rest_window_ms: dict[str, float] = field(default_factory=dict)
 
 
 def keys_for_game(config: Config, game: str | None) -> dict[Button, str]:
@@ -65,6 +73,15 @@ def keys_for_game(config: Config, game: str | None) -> dict[Button, str]:
         available = ", ".join(sorted(config.games)) or "none"
         raise ConfigError(f"No profile for game '{game}'. Available: {available}")
     return config.games[game]
+
+
+def config_for_game(config: Config, game: str | None) -> Config:
+    """The config with a game profile's own settings applied (today: rest_window_ms)."""
+    keys_for_game(config, game)                       # validates the name
+    if game is None or game not in config.game_rest_window_ms:
+        return config
+    classifier = replace(config.classifier, rest_window_ms=config.game_rest_window_ms[game])
+    return replace(config, classifier=classifier)
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
@@ -90,6 +107,7 @@ def parse_config(raw: dict[str, Any]) -> Config:
         timing=_parse_timing(_section(raw, "timing")),
         keys=keys,
         games=_parse_games(raw.get("games", {}), keys),
+        game_rest_window_ms=_parse_game_rest_windows(raw.get("games", {})),
     )
     return config
 
@@ -107,9 +125,16 @@ def _parse_calibration(section: dict[str, Any]) -> CalibrationConfig:
 
 
 def _parse_classifier(section: dict[str, Any]) -> ClassifierConfig:
-    _check_keys(section, {"dpad_threshold"}, "classifier")
+    _check_keys(section, {"dpad_threshold", "button_threshold", "b_threshold", "b_down_fraction",
+                          "rest_window_ms", "rest_percentile", "rest_max_shift"}, "classifier")
     return ClassifierConfig(
         dpad_threshold=_number_in_range(section, "dpad_threshold", "classifier", 0.1, 0.9),
+        button_threshold=_number_in_range(section, "button_threshold", "classifier", 0.1, 0.9),
+        b_threshold=_number_in_range(section, "b_threshold", "classifier", 0.1, 1.5),
+        b_down_fraction=_number_in_range(section, "b_down_fraction", "classifier", 0, 1.0),
+        rest_window_ms=_number_in_range(section, "rest_window_ms", "classifier", 0, 60000),
+        rest_percentile=_number_in_range(section, "rest_percentile", "classifier", 1, 50),
+        rest_max_shift=_number_in_range(section, "rest_max_shift", "classifier", 0, 1.0),
     )
 
 
@@ -150,7 +175,7 @@ def _parse_games(section: Any, base: dict[Button, str]) -> dict[str, dict[Button
         where = f"games.{name}"
         if not isinstance(overrides, dict):
             raise ConfigError(f"[{where}] must be a section")
-        _check_keys(overrides, {button.value for button in Button}, where)
+        _check_keys(overrides, {button.value for button in Button} | {"rest_window_ms"}, where)
         keys = dict(base)
         for button in Button:
             if button.value in overrides:
@@ -158,6 +183,13 @@ def _parse_games(section: Any, base: dict[Button, str]) -> dict[str, dict[Button
         _check_no_repeated_keys(keys, where)
         games[name] = keys
     return games
+
+
+def _parse_game_rest_windows(section: dict[str, Any]) -> dict[str, float]:
+    """[games.<name>] rest_window_ms = 0: e.g. a racing game where you hold the accelerator."""
+    return {name: _number_in_range(overrides, "rest_window_ms", f"games.{name}", 0, 60000)
+            for name, overrides in section.items()
+            if isinstance(overrides, dict) and "rest_window_ms" in overrides}
 
 
 def _key_name(section: dict[str, Any], button: Button, where: str) -> str:

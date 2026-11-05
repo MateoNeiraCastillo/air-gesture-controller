@@ -62,7 +62,7 @@ class GuidedSession:
             image = frame.image
             left, right = detect_hands(self.app.landmarker, image, now)
             draw_hands(image, left, right)
-            reading = self.app.classifier.classify(left, right)
+            reading = self.app.classifier.classify(left, right, now)
             events = self.app.machine.update(reading, now)
             for event in events:
                 self.events.append((event.timestamp_ms, event.button.value, event.pressed))
