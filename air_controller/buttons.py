@@ -12,3 +12,4 @@ class Button(Enum):
     LEFT = "left"
     RIGHT = "right"
     A = "a"
+    B = "b"

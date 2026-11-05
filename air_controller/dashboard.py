@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 
 from air_controller.buttons import Button
+from air_controller.calibration import CALIBRATION_SEQUENCE
 from air_controller.classifier import FrameReading
 
 WINDOW = "Air Gesture Controller"
@@ -48,14 +49,16 @@ LEFT_CARD_X = (120, 550)
 RIGHT_CARD_X = (570, 1000)
 LEFT_BUTTON_BOX = (140, 536, 325, 592)
 RIGHT_BUTTON_BOX = (345, 536, 530, 592)
-A_CENTER = (785, 580)
-A_RADIUS = 38
+B_CENTER = (705, 580)   # NES order: B on the left, A on the right
+A_CENTER = (865, 580)
+BUTTON_RADIUS = 38
 BAR_X = (140, 530)
 BAR_Y = 620
-TABLE_X, TABLE_TOP, TABLE_ROW_H = 120, 656, 29
+TABLE_X, TABLE_TOP, TABLE_ROW_H = 120, 654, 24
 TABLE_COLUMNS = (("BUTTON", 130), ("HAND", 150), ("KEY", 110),
                  ("CAMERA SEES", 170), ("GAME RECEIVES", 190), ("PRESSES", 130))
-TABLE_ROWS = ((Button.LEFT, "LEFT", "left"), (Button.RIGHT, "RIGHT", "left"), (Button.A, "A", "right"))
+TABLE_ROWS = ((Button.LEFT, "LEFT", "left"), (Button.RIGHT, "RIGHT", "left"),
+              (Button.A, "A", "right"), (Button.B, "B", "right"))
 
 # Calibration layout: the camera sits exactly in the middle of the canvas.
 CALIBRATION_CAMERA = (240, 150, 640, 480)
@@ -88,7 +91,7 @@ class CalibrationView:
     title: str = ""
     lines: tuple[str, ...] = ()
     step: int = 0                    # 1-based; 0 = before the first pose
-    total_steps: int = 4
+    total_steps: int = len(CALIBRATION_SEQUENCE)
     countdown: int | None = None
     progress: float = 0.0
     left_seen: bool = False
@@ -444,11 +447,12 @@ def _draw_left_card(canvas, view: GameView) -> None:
 
 def _draw_right_card(canvas, view: GameView) -> None:
     seen = view.reading.right_visible
-    _draw_card(canvas, RIGHT_CARD_X, "RIGHT THUMB  -  BUTTON", seen)
-    fill, border, thickness, ink = _button_style(Button.A, view, seen)
-    cv2.circle(canvas, A_CENTER, A_RADIUS, fill, -1, cv2.LINE_AA)
-    cv2.circle(canvas, A_CENTER, A_RADIUS, border, thickness, cv2.LINE_AA)
-    _centered(canvas, "A", A_CENTER[0], A_CENTER[1] + 16, 1.4, ink, 3)
+    _draw_card(canvas, RIGHT_CARD_X, "RIGHT THUMB  -  BUTTONS", seen)
+    for button, center in ((Button.B, B_CENTER), (Button.A, A_CENTER)):
+        fill, border, thickness, ink = _button_style(button, view, seen)
+        cv2.circle(canvas, center, BUTTON_RADIUS, fill, -1, cv2.LINE_AA)
+        cv2.circle(canvas, center, BUTTON_RADIUS, border, thickness, cv2.LINE_AA)
+        _centered(canvas, button.name, center[0], center[1] + 16, 1.4, ink, 3)
 
 
 def _draw_table(canvas, view: GameView) -> None:
@@ -460,7 +464,7 @@ def _draw_table(canvas, view: GameView) -> None:
         centers.append(x + column_width // 2)
         x += column_width
     for center, (name, _) in zip(centers, TABLE_COLUMNS):
-        _centered(canvas, name, center, TABLE_TOP + 20, 0.46, GRAY)
+        _centered(canvas, name, center, TABLE_TOP + 17, 0.44, GRAY)
     visible = {"left": view.reading.left_visible, "right": view.reading.right_visible}
     for index, (button, label, hand) in enumerate(TABLE_ROWS):
         top = TABLE_TOP + TABLE_ROW_H * (index + 1)
@@ -469,7 +473,7 @@ def _draw_table(canvas, view: GameView) -> None:
         cv2.line(canvas, (TABLE_X, top), (TABLE_X + width, top), DIM, 1)
         cells = _table_cells(button, label, hand, visible[hand], view)
         for center, (text, color) in zip(centers, cells):
-            _centered(canvas, text, center, top + 21, 0.52, color)
+            _centered(canvas, text, center, top + 18, 0.5, color)
     cv2.rectangle(canvas, (TABLE_X, TABLE_TOP), (TABLE_X + width, bottom), GRAY, 1)
 
 

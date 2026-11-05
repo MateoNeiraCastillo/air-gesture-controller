@@ -20,6 +20,7 @@ needs the Accessibility permission.
 Usage:
     python scripts/play.py --dry-run     # doesn't send keys: prints them
     python scripts/play.py               # plays for real
+    python scripts/play.py --game celeste  # keys from the [games.celeste] profile
 """
 
 import argparse
@@ -32,18 +33,20 @@ import cv2
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from calibrate_live import LiveCalibration, detect_hands  # noqa: E402  (sibling script, same directory)
 
+from air_controller.buttons import Button  # noqa: E402
 from air_controller.capture import Frame, LatestFrameCamera, VideoFileSource  # noqa: E402
-from air_controller.config import load_config  # noqa: E402
+from air_controller.config import keys_for_game, load_config  # noqa: E402
 from air_controller.dashboard import GREEN, WINDOW, YELLOW, draw_hands, render_game  # noqa: E402
 from air_controller.latency import LatencyTracker  # noqa: E402
 from air_controller.output import KeyOutput, PynputKeySender, RecordingKeySender  # noqa: E402
 
 
 class Player:
-    def __init__(self, app: LiveCalibration, output: KeyOutput, show: bool = True,
-                 dry_run: bool = False) -> None:
+    def __init__(self, app: LiveCalibration, output: KeyOutput, keys: dict[Button, str],
+                 show: bool = True, dry_run: bool = False) -> None:
         self.app = app
         self.output = output
+        self.keys = keys
         self.show = show
         self.dry_run = dry_run
         self.paused = False
@@ -108,7 +111,6 @@ class Player:
         return render_game(image, self._view(reading, warnings))
 
     def _view(self, reading, warnings):
-        keys = self.app.config.keys
         down = self.output.pressed_keys
         info = [f"{self.latency.fps():.0f} fps"]
         info.append("DRY RUN: no keys are sent, they are printed in the terminal." if self.dry_run
@@ -116,7 +118,8 @@ class Player:
         info.append("To use P, R or Q, click this window first.")
         return self.app.game_view(
             reading, warnings,
-            sent=frozenset(button for button, key in keys.items() if key in down),
+            keys=self.keys,
+            sent=frozenset(button for button, key in self.keys.items() if key in down),
             status="PAUSED" if self.paused else "PLAYING",
             status_color=YELLOW if self.paused else GREEN,
             info=tuple(info),
@@ -150,16 +153,19 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true",
                         help="don't send keys: print them in the terminal")
     parser.add_argument("--video", type=Path, help="use a video instead of the camera (testing)")
+    parser.add_argument("--game", help="key profile from config.toml ([games.<name>]), e.g. celeste")
     args = parser.parse_args()
 
     config = load_config()
+    keys = keys_for_game(config, args.game)
+    print("Keys: " + ", ".join(f"{button.value} → {key}" for button, key in keys.items()))
     sender = RecordingKeySender(echo=True) if args.dry_run else PynputKeySender()
     source = VideoFileSource(args.video) if args.video else LatestFrameCamera()
     app = LiveCalibration(source, config)
     player = None
     try:
-        with KeyOutput(sender, config.keys) as output:
-            player = Player(app, output, dry_run=args.dry_run)
+        with KeyOutput(sender, keys) as output:
+            player = Player(app, output, keys, dry_run=args.dry_run)
             player.run()
     except KeyboardInterrupt:
         print("\nInterrupted.")

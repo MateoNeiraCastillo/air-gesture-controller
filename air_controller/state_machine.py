@@ -20,7 +20,7 @@ from air_controller.classifier import FrameReading
 from air_controller.config import TimingConfig
 
 # Which hand controls each button.
-HAND_OF = {Button.LEFT: "left", Button.RIGHT: "left", Button.A: "right"}
+HAND_OF = {Button.LEFT: "left", Button.RIGHT: "left", Button.A: "right", Button.B: "right"}
 
 
 @dataclass(frozen=True)

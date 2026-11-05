@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from air_controller.buttons import Button
-from air_controller.calibration import CalibrationCollector, Pose
+from air_controller.calibration import SEQUENCE_WITHOUT_B, CalibrationCollector, Pose
 from air_controller.classifier import Classifier
 from air_controller.config import ClassifierConfig
 from air_controller.features import INDEX_MCP, MIDDLE_MCP, THUMB_TIP, WRIST
@@ -14,6 +14,7 @@ RNG = np.random.default_rng(1)
 
 REST = (60, -40)
 PRESSED = (60, 10)
+B_PRESSED = (100, -40)   # right thumb outwards
 DPAD_LEFT = (20, -40)
 DPAD_RIGHT = (100, -40)
 
@@ -27,17 +28,22 @@ def make_hand(tip_x: float, tip_y: float, noise: float = 0.5) -> np.ndarray:
     return hand + RNG.normal(0, noise, hand.shape)
 
 
-@pytest.fixture(scope="module")
-def classifier() -> Classifier:
-    collector = CalibrationCollector(frames_per_pose=FRAMES)
-    plan = [(Pose.REST, REST, REST), (Pose.A_PRESSED, REST, PRESSED),
-            (Pose.DPAD_LEFT, DPAD_LEFT, REST), (Pose.DPAD_RIGHT, DPAD_RIGHT, REST)]
-    for pose, left_tip, right_tip in plan:
+PLAN = [(Pose.REST, REST, REST), (Pose.A_PRESSED, REST, PRESSED), (Pose.B_PRESSED, REST, B_PRESSED),
+        (Pose.DPAD_LEFT, DPAD_LEFT, REST), (Pose.DPAD_RIGHT, DPAD_RIGHT, REST)]
+
+
+def build_classifier(collector: CalibrationCollector) -> Classifier:
+    for pose, left_tip, right_tip in PLAN:
         while collector.current_pose is pose:
             collector.add(make_hand(*left_tip), make_hand(*right_tip))
     result = collector.build(min_separation=3.0, dpad_threshold=0.5)
     assert result.ok, result.problems
     return Classifier(result.calibration, ClassifierConfig(dpad_threshold=0.5))
+
+
+@pytest.fixture(scope="module")
+def classifier() -> Classifier:
+    return build_classifier(CalibrationCollector(frames_per_pose=FRAMES))
 
 
 def between(a: tuple[float, float], b: tuple[float, float], fraction: float) -> tuple[float, float]:
@@ -89,3 +95,24 @@ def test_nan_landmarks_count_as_missing(classifier: Classifier) -> None:
     reading = classifier.classify(make_hand(*REST), broken)
     assert not reading.right_visible
     assert Button.A not in reading.pressed
+
+
+def test_b_pressed(classifier: Classifier) -> None:
+    assert classifier.classify(make_hand(*REST), make_hand(*B_PRESSED)).pressed == {Button.B}
+
+
+def test_halfway_between_a_and_b_is_one_of_them_never_both(classifier: Classifier) -> None:
+    """A single thumb: A and B exclude each other."""
+    reading = classifier.classify(make_hand(*REST), make_hand(*between(PRESSED, B_PRESSED, 0.5)))
+    assert not {Button.A, Button.B} <= reading.pressed
+
+
+def test_dpad_and_b_together(classifier: Classifier) -> None:
+    reading = classifier.classify(make_hand(*DPAD_LEFT), make_hand(*B_PRESSED))
+    assert reading.pressed == {Button.LEFT, Button.B}
+
+
+def test_calibration_without_b_never_reports_b() -> None:
+    classifier = build_classifier(CalibrationCollector(frames_per_pose=FRAMES, sequence=SEQUENCE_WITHOUT_B))
+    reading = classifier.classify(make_hand(*REST), make_hand(*B_PRESSED))
+    assert Button.B not in reading.pressed

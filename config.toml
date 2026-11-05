@@ -43,7 +43,16 @@ release_confirm_ms = 40
 missing_hand_ms = 200
 
 [keys]
-# Key sent by each button. TODO: confirm with FullScreenMario in Phase 3.
+# Key sent by each button by default (Chrome dino, SuperTuxKart...).
 left = "left"
 right = "right"
 a = "up"
+# B: tilt the right thumb outwards. Down: duck in the dino game, brake in SuperTuxKart.
+b = "down"
+
+# Per-game profiles: only the listed keys change; the rest come from [keys].
+# Usage: python scripts/play.py --game celeste
+[games.celeste]
+# Celeste Classic (PICO-8, browser): arrows to move, C (or Z) jumps, X dashes.
+a = "c"
+b = "x"

@@ -4,8 +4,10 @@ Pure, memoryless logic: one frame in, one reading out. Smoothing over time
 (not releasing a button because of one odd frame) is the job of the state
 machine (layer 4).
 
-- Button A: is the right thumb tip closer to the calibrated "pressed" or
-  "rest"? Distances measured in noise widths.
+- Buttons A and B (right thumb): is the tip closer to rest, to "A pressed"
+  (thumb down) or to "B pressed" (thumb outwards)? Distances measured in noise
+  widths. With a single thumb, A and B exclude each other: they can't be pressed
+  at the same time (in Celeste you jump and then dash).
 - D-pad, in two steps:
     1. Direction: the nearest calibrated pose (left or right).
     2. Intensity: how far the thumb has moved from rest towards it.
@@ -55,7 +57,13 @@ class Classifier:
     def __init__(self, calibration: Calibration, config: ClassifierConfig) -> None:
         self._calibration = calibration
         self._threshold = config.dpad_threshold
-        self._button_scale = _pooled_spread(calibration.right_rest, calibration.right_pressed)
+        self._right_targets: dict[Button | None, np.ndarray] = {
+            None: calibration.right_rest.center, Button.A: calibration.right_a.center}
+        references = [calibration.right_rest, calibration.right_a]
+        if calibration.right_b is not None:
+            self._right_targets[Button.B] = calibration.right_b.center
+            references.append(calibration.right_b)
+        self._button_scale = _pooled_spread(*references)
 
     def classify(self, left: np.ndarray | None, right: np.ndarray | None) -> FrameReading:
         """`left`/`right`: landmarks (21, 3) in pixels, or None if the hand is not visible."""
@@ -63,8 +71,10 @@ class Classifier:
         left_features = _features(left)
         right_features = _features(right)
 
-        if right_features is not None and self._a_pressed(right_features):
-            pressed.add(Button.A)
+        if right_features is not None:
+            button = self._right_button(right_features)
+            if button is not None:
+                pressed.add(button)
 
         progress = {Button.LEFT: float("nan"), Button.RIGHT: float("nan")}
         nearest = None
@@ -84,11 +94,11 @@ class Classifier:
             dpad_direction=nearest,
         )
 
-    def _a_pressed(self, features: np.ndarray) -> bool:
+    def _right_button(self, features: np.ndarray) -> Button | None:
+        """Nearest calibrated pose of the right thumb (None = rest)."""
         point = features[list(BUTTON_COLUMNS)]
-        to_rest = np.linalg.norm((point - self._calibration.right_rest.center) / self._button_scale)
-        to_pressed = np.linalg.norm((point - self._calibration.right_pressed.center) / self._button_scale)
-        return bool(to_pressed < to_rest)
+        return min(self._right_targets, key=lambda button: float(
+            np.linalg.norm((point - self._right_targets[button]) / self._button_scale)))
 
 
 def _features(landmarks: np.ndarray | None) -> np.ndarray | None:

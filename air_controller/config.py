@@ -7,7 +7,7 @@ of a game.
 """
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +52,19 @@ class Config:
     posture: PostureConfig
     timing: TimingConfig
     keys: dict[Button, str]
+    # Per-game profiles ([games.<name>] in the TOML): the complete key map of
+    # each game, already merged with [keys] and validated.
+    games: dict[str, dict[Button, str]] = field(default_factory=dict)
+
+
+def keys_for_game(config: Config, game: str | None) -> dict[Button, str]:
+    """Keys to use: those in [keys], or the game's profile if one is given."""
+    if game is None:
+        return config.keys
+    if game not in config.games:
+        available = ", ".join(sorted(config.games)) or "none"
+        raise ConfigError(f"No profile for game '{game}'. Available: {available}")
+    return config.games[game]
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
@@ -68,13 +81,15 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
 
 def parse_config(raw: dict[str, Any]) -> Config:
     """Converts the TOML dictionary into a Config, validating every value."""
-    _check_keys(raw, {"calibration", "classifier", "posture", "timing", "keys"}, "root")
+    _check_keys(raw, {"calibration", "classifier", "posture", "timing", "keys", "games"}, "root")
+    keys = _parse_keys(_section(raw, "keys"))
     config = Config(
         calibration=_parse_calibration(_section(raw, "calibration")),
         classifier=_parse_classifier(_section(raw, "classifier")),
         posture=_parse_posture(_section(raw, "posture")),
         timing=_parse_timing(_section(raw, "timing")),
-        keys=_parse_keys(_section(raw, "keys")),
+        keys=keys,
+        games=_parse_games(raw.get("games", {}), keys),
     )
     return config
 
@@ -121,16 +136,42 @@ def _parse_keys(section: dict[str, Any]) -> dict[Button, str]:
     missing = expected - set(section)
     if missing:
         raise ConfigError(f"[keys]: missing key for {', '.join(sorted(missing))}")
-    keys: dict[Button, str] = {}
-    for button in Button:
-        key = section[button.value]
-        if not isinstance(key, str) or not key.strip():
-            raise ConfigError(f"[keys] {button.value}: must be a non-empty string")
-        keys[button] = key.strip().lower()
-    repeated = {key for key in keys.values() if list(keys.values()).count(key) > 1}
-    if repeated:
-        raise ConfigError(f"[keys]: the same key for several buttons: {', '.join(sorted(repeated))}")
+    keys = {button: _key_name(section, button, "keys") for button in Button}
+    _check_no_repeated_keys(keys, "keys")
     return keys
+
+
+def _parse_games(section: Any, base: dict[Button, str]) -> dict[str, dict[Button, str]]:
+    """Each [games.<name>] changes only the keys it lists; the rest come from [keys]."""
+    if not isinstance(section, dict):
+        raise ConfigError("[games] must be a section")
+    games: dict[str, dict[Button, str]] = {}
+    for name, overrides in section.items():
+        where = f"games.{name}"
+        if not isinstance(overrides, dict):
+            raise ConfigError(f"[{where}] must be a section")
+        _check_keys(overrides, {button.value for button in Button}, where)
+        keys = dict(base)
+        for button in Button:
+            if button.value in overrides:
+                keys[button] = _key_name(overrides, button, where)
+        _check_no_repeated_keys(keys, where)
+        games[name] = keys
+    return games
+
+
+def _key_name(section: dict[str, Any], button: Button, where: str) -> str:
+    key = section[button.value]
+    if not isinstance(key, str) or not key.strip():
+        raise ConfigError(f"[{where}] {button.value}: must be a non-empty string")
+    return key.strip().lower()
+
+
+def _check_no_repeated_keys(keys: dict[Button, str], where: str) -> None:
+    values = list(keys.values())
+    repeated = {key for key in values if values.count(key) > 1}
+    if repeated:
+        raise ConfigError(f"[{where}]: the same key for several buttons: {', '.join(sorted(repeated))}")
 
 
 # --------------------------------------------------------------------------- #

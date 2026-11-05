@@ -55,7 +55,8 @@ def build_script(blocks: int = 3) -> list[tuple[int, Step]]:
     return [(block, step) for block in range(1, blocks + 1) for step in BLOCK]
 
 
-BUTTON_BITS = {Button.LEFT: 1, Button.RIGHT: 2, Button.A: 4}
+# B is not in the script: it is scored as "must never be pressed" (ghost presses).
+BUTTON_BITS = {Button.LEFT: 1, Button.RIGHT: 2, Button.A: 4, Button.B: 8}
 
 
 def to_mask(buttons: frozenset[Button] | set[Button]) -> int:

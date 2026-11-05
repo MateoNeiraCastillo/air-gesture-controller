@@ -5,11 +5,15 @@ from air_controller.buttons import Button
 from air_controller.classifier import FrameReading
 from air_controller.dashboard import (
     A_CENTER,
+    B_CENTER,
     CANVAS_H,
     CANVAS_W,
     GREEN,
     LEFT_BUTTON_BOX,
     RIGHT_BUTTON_BOX,
+    TABLE_ROW_H,
+    TABLE_ROWS,
+    TABLE_TOP,
     CalibrationView,
     GameView,
     dpad_marker,
@@ -19,7 +23,7 @@ from air_controller.dashboard import (
     wrap_to_width,
 )
 
-KEYS = {Button.LEFT: "left", Button.RIGHT: "right", Button.A: "up"}
+KEYS = {Button.LEFT: "left", Button.RIGHT: "right", Button.A: "up", Button.B: "down"}
 
 
 def reading(pressed=(), left=True, right=True, left_progress=0.0, right_progress=0.0, direction=Button.LEFT):
@@ -61,6 +65,20 @@ def test_a_lights_up_without_touching_the_dpad():
     assert is_green(canvas, A_CENTER[0] - 25, A_CENTER[1])
     assert not is_green(canvas, *box_center_edge(LEFT_BUTTON_BOX))
     assert not is_green(canvas, *box_center_edge(RIGHT_BUTTON_BOX))
+
+
+def test_b_lights_up_on_its_own():
+    canvas = render_game(camera(), view(reading({Button.B}), {Button.B}))
+    assert is_green(canvas, B_CENTER[0] - 25, B_CENTER[1])
+    assert not is_green(canvas, A_CENTER[0] - 25, A_CENTER[1])
+
+
+def test_input_table_fits_inside_the_canvas():
+    assert TABLE_TOP + TABLE_ROW_H * (len(TABLE_ROWS) + 1) < CANVAS_H
+
+
+def test_every_button_has_a_table_row():
+    assert {row[0] for row in TABLE_ROWS} == set(Button)
 
 
 def test_marker_follows_the_classifier_direction_not_the_largest_progress():

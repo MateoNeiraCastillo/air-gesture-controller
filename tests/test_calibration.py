@@ -3,6 +3,7 @@ import pytest
 
 from air_controller.calibration import (
     CALIBRATION_SEQUENCE,
+    SEQUENCE_WITHOUT_B,
     CalibrationCollector,
     Pose,
     Reference,
@@ -27,6 +28,7 @@ def make_hand(tip_x: float, tip_y: float, noise: float = 0.5) -> np.ndarray:
 # Clearly distinct synthetic poses (thumb tip, in pixels).
 REST = (60, -40)
 PRESSED = (60, 10)
+B_PRESSED = (100, -40)   # right thumb tilted outwards
 DPAD_LEFT = (20, -40)
 DPAD_RIGHT = (100, -40)
 
@@ -39,10 +41,11 @@ def feed(collector: CalibrationCollector, pose: Pose, left_tip, right_tip, frame
 
 
 def calibrate(pressed=PRESSED, dpad_left=DPAD_LEFT, dpad_right=DPAD_RIGHT,
-              left_while_a=REST) -> CalibrationCollector:
+              left_while_a=REST, b_pressed=B_PRESSED, left_while_b=REST) -> CalibrationCollector:
     collector = CalibrationCollector(frames_per_pose=FRAMES)
     feed(collector, Pose.REST, REST, REST)
     feed(collector, Pose.A_PRESSED, left_while_a, pressed)
+    feed(collector, Pose.B_PRESSED, left_while_b, b_pressed)
     feed(collector, Pose.DPAD_LEFT, dpad_left, REST)
     feed(collector, Pose.DPAD_RIGHT, dpad_right, REST)
     return collector
@@ -116,3 +119,38 @@ def test_separation_grows_with_distance() -> None:
     far = Reference(np.array([10.0]), np.array([1.0]))
     assert separation(base, near) < separation(base, far)
     assert separation(base, far) == pytest.approx(10.0)
+
+
+def test_weak_b_is_rejected() -> None:
+    result = calibrate(b_pressed=(61, -40)).build(min_separation=3.0, dpad_threshold=0.5)
+    assert not result.ok
+    assert any("Button B" in problem for problem in result.problems)
+
+
+def test_a_and_b_too_similar_are_rejected() -> None:
+    result = calibrate(b_pressed=(61, 9)).build(min_separation=3.0, dpad_threshold=0.5)
+    assert not result.ok
+    assert any("A and B" in problem for problem in result.problems)
+
+
+def test_left_thumb_drifting_while_pressing_b_is_rejected() -> None:
+    drifted = (REST[0] + 0.8 * (DPAD_LEFT[0] - REST[0]), REST[1])
+    result = calibrate(left_while_b=drifted).build(min_separation=3.0, dpad_threshold=0.5)
+    assert not result.ok
+    assert any("When pressing B" in problem and "left" in problem for problem in result.problems)
+
+
+def test_good_calibration_includes_b() -> None:
+    calibration = calibrate().build(min_separation=3.0, dpad_threshold=0.5).calibration
+    assert calibration.right_b is not None and calibration.left_rest_while_b is not None
+
+
+def test_sequence_without_b_skips_the_pose_and_disables_b() -> None:
+    """Para re-analizar los clips del spike, que no tienen postura B."""
+    collector = CalibrationCollector(frames_per_pose=FRAMES, sequence=SEQUENCE_WITHOUT_B)
+    for pose, left_tip, right_tip in [(Pose.REST, REST, REST), (Pose.A_PRESSED, REST, PRESSED),
+                                      (Pose.DPAD_LEFT, DPAD_LEFT, REST), (Pose.DPAD_RIGHT, DPAD_RIGHT, REST)]:
+        feed(collector, pose, left_tip, right_tip)
+    result = collector.build(min_separation=3.0, dpad_threshold=0.5)
+    assert result.ok, result.problems
+    assert result.calibration.right_b is None

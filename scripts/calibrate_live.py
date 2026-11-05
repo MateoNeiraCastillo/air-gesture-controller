@@ -1,8 +1,8 @@
 """Live calibration and a view of what the classifier reads.
 
-1. Waits until both hands are in view, then guides you through the 4 poses
-   (rest, A pressed, D-pad left, D-pad right). Each one starts with a countdown
-   in the center of the screen.
+1. Waits until both hands are in view, then guides you through the 5 poses
+   (rest, A pressed, B pressed, D-pad left, D-pad right). Each one starts with a
+   countdown in the center of the screen.
 2. If the calibration fails quality control, it tells you why
    (on screen and in the terminal). Press R to repeat.
 3. If it passes, it shows SUCCESS and then the dashboard (air_controller/dashboard.py).
@@ -37,6 +37,7 @@ from air_controller.calibration import (
     CalibrationCollector,
     CalibrationResult,
     Pose,
+    left_thumb_drift,
 )
 from air_controller.capture import FrameSource, LatestFrameCamera, VideoFileSource
 from air_controller.classifier import Classifier, FrameReading
@@ -74,6 +75,9 @@ INSTRUCTIONS = {
                  "Thumbs relaxed, pressing nothing. Then stay still.")),
     Pose.A_PRESSED: ("RIGHT THUMB: PRESS A",
                      ("Push your right thumb all the way down and hold it there.",
+                      "Keep your LEFT thumb completely still.")),
+    Pose.B_PRESSED: ("RIGHT THUMB: PRESS B",
+                     ("Tilt your right thumb OUTWARDS, away from the other hand, and hold it.",
                       "Keep your LEFT thumb completely still.")),
     Pose.DPAD_LEFT: ("LEFT THUMB: PUSH LEFT",
                      ("Move your left thumb as far left as is comfortable,",
@@ -250,12 +254,11 @@ class LiveCalibration:
             self.machine = ButtonStateMachine(self.config.timing)
             self.presses.clear()
             self.success_until = time.perf_counter() + SUCCESS_SECONDS
-            progress = self.result.calibration.dpad.progress(
-                self.result.calibration.left_rest_while_a.center)
             print("Calibration ACCEPTED.")
-            print(f"  Left thumb when pressing A: {progress[Button.LEFT]:.0%} towards left, "
-                  f"{progress[Button.RIGHT]:.0%} towards right (limit "
-                  f"{self.config.classifier.dpad_threshold / 2:.0%})")
+            for name, progress in left_thumb_drift(self.result.calibration).items():
+                print(f"  Left thumb when pressing {name}: {progress[Button.LEFT]:.0%} towards left, "
+                      f"{progress[Button.RIGHT]:.0%} towards right (limit "
+                      f"{self.config.classifier.dpad_threshold / 2:.0%})")
         else:
             print("Calibration REJECTED:", *self.result.problems, sep="\n  ")
         self._save_calibration()

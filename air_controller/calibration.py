@@ -1,12 +1,13 @@
 """Per-session calibration: learn what YOUR poses look like before playing.
 
 In the spike we saw that one session's references don't work in another (53–67 %
-accuracy), so every game starts by calibrating four poses:
+accuracy), so every game starts by calibrating five poses:
 
     1. rest         (both hands)  → reference for "nothing pressed"
     2. A pressed    (both hands)  → the left hand must stay at rest
-    3. D-pad left   (left hand)
-    4. D-pad right  (left hand)
+    3. B pressed    (both hands)  → same
+    4. D-pad left   (left hand)
+    5. D-pad right  (left hand)
 
 Decisions:
 - VALID frames (hand detected) are counted, not seconds: if MediaPipe is slow
@@ -30,9 +31,11 @@ import numpy as np
 from air_controller.buttons import Button
 from air_controller.features import hand_size, thumb_position_features
 
-# Columns of thumb_position_features used by each control (see spike):
-# button A only uses the tip height; the D-pad uses all four.
-BUTTON_COLUMNS = (1, 3)
+# Columns of thumb_position_features used by each hand. Both use all four:
+# A is a vertical movement of the right thumb (dy) and B a horizontal one (dx).
+# A used to use only (1, 3); re-evaluating the 27-10 guided session with all
+# four columns, A scores the same (99.5–99.6 % vs 99.6 %).
+BUTTON_COLUMNS = (0, 1, 2, 3)
 DPAD_COLUMNS = (0, 1, 2, 3)
 
 MAD_TO_STD = 1.4826   # converts MAD to standard deviation for normal data
@@ -42,16 +45,21 @@ MIN_SPREAD = 1e-3     # spread floor: avoids dividing by ~0
 class Pose(Enum):
     REST = "rest"
     A_PRESSED = "A pressed"
+    B_PRESSED = "B pressed"
     DPAD_LEFT = "D-pad left"
     DPAD_RIGHT = "D-pad right"
 
 
-CALIBRATION_SEQUENCE = (Pose.REST, Pose.A_PRESSED, Pose.DPAD_LEFT, Pose.DPAD_RIGHT)
+CALIBRATION_SEQUENCE = (Pose.REST, Pose.A_PRESSED, Pose.B_PRESSED, Pose.DPAD_LEFT, Pose.DPAD_RIGHT)
+# Without B: to re-analyse the spike recordings, which don't have that pose.
+# The resulting calibration doesn't detect B (Calibration.right_b = None).
+SEQUENCE_WITHOUT_B = tuple(pose for pose in CALIBRATION_SEQUENCE if pose is not Pose.B_PRESSED)
 
 # Which hands must be visible in each pose for the frame to count.
 REQUIRED_HANDS = {
     Pose.REST: ("left", "right"),
     Pose.A_PRESSED: ("right", "left"),
+    Pose.B_PRESSED: ("right", "left"),
     Pose.DPAD_LEFT: ("left",),
     Pose.DPAD_RIGHT: ("left",),
 }
@@ -111,7 +119,7 @@ class Calibration:
     """Everything the classifier needs to know about this session."""
 
     right_rest: Reference         # BUTTON_COLUMNS columns
-    right_pressed: Reference      # BUTTON_COLUMNS columns
+    right_a: Reference            # BUTTON_COLUMNS columns
     left_rest: Reference          # DPAD_COLUMNS columns
     left_rest_while_a: Reference  # left thumb while the right hand presses A
     left_dpad_left: Reference     # DPAD_COLUMNS columns
@@ -123,6 +131,9 @@ class Calibration:
     # the thumb (in the daytime spike, the left one ranged from 77 % to 130 %).
     left_size_range: tuple[float, float] = (0.0, 0.0)
     right_size_range: tuple[float, float] = (0.0, 0.0)
+    # Button B (None if calibrated without that pose, e.g. the spike clips).
+    right_b: Reference | None = None
+    left_rest_while_b: Reference | None = None
 
 
 @dataclass(frozen=True)
@@ -156,25 +167,29 @@ class CalibrationCollector:
         result = collector.build(min_separation=3.0)
     """
 
-    def __init__(self, frames_per_pose: int) -> None:
+    def __init__(self, frames_per_pose: int,
+                 sequence: tuple[Pose, ...] = CALIBRATION_SEQUENCE) -> None:
         if frames_per_pose < 1:
             raise ValueError("frames_per_pose must be >= 1")
+        if sequence not in (CALIBRATION_SEQUENCE, SEQUENCE_WITHOUT_B):
+            raise ValueError("Unsupported calibration sequence")
         self.frames_per_pose = frames_per_pose
+        self.sequence = sequence
         self._step = 0
         self._features: dict[Pose, dict[str, list[np.ndarray]]] = {
-            pose: {"left": [], "right": []} for pose in CALIBRATION_SEQUENCE
+            pose: {"left": [], "right": []} for pose in sequence
         }
         self._hand_sizes: dict[Pose, dict[str, list[float]]] = {
-            pose: {"left": [], "right": []} for pose in CALIBRATION_SEQUENCE
+            pose: {"left": [], "right": []} for pose in sequence
         }
 
     @property
     def done(self) -> bool:
-        return self._step >= len(CALIBRATION_SEQUENCE)
+        return self._step >= len(self.sequence)
 
     @property
     def current_pose(self) -> Pose | None:
-        return None if self.done else CALIBRATION_SEQUENCE[self._step]
+        return None if self.done else self.sequence[self._step]
 
     @property
     def progress(self) -> float:
@@ -227,12 +242,13 @@ def build_calibration(samples: dict[Pose, dict[str, np.ndarray]],
     """
     button = list(BUTTON_COLUMNS)
     dpad = list(DPAD_COLUMNS)
+    has_b = Pose.B_PRESSED in samples
     left_rest = Reference.from_samples(samples[Pose.REST]["left"][:, dpad])
     left_dpad_left = Reference.from_samples(samples[Pose.DPAD_LEFT]["left"][:, dpad])
     left_dpad_right = Reference.from_samples(samples[Pose.DPAD_RIGHT]["left"][:, dpad])
     calibration = Calibration(
         right_rest=Reference.from_samples(samples[Pose.REST]["right"][:, button]),
-        right_pressed=Reference.from_samples(samples[Pose.A_PRESSED]["right"][:, button]),
+        right_a=Reference.from_samples(samples[Pose.A_PRESSED]["right"][:, button]),
         left_rest=left_rest,
         left_rest_while_a=Reference.from_samples(samples[Pose.A_PRESSED]["left"][:, dpad]),
         left_dpad_left=left_dpad_left,
@@ -242,6 +258,8 @@ def build_calibration(samples: dict[Pose, dict[str, np.ndarray]],
         right_hand_size=_median_size(hand_sizes, "right"),
         left_size_range=_size_range(hand_sizes, "left"),
         right_size_range=_size_range(hand_sizes, "right"),
+        right_b=Reference.from_samples(samples[Pose.B_PRESSED]["right"][:, button]) if has_b else None,
+        left_rest_while_b=Reference.from_samples(samples[Pose.B_PRESSED]["left"][:, dpad]) if has_b else None,
     )
     problems = quality_problems(calibration, min_separation, dpad_threshold)
     return CalibrationResult(None if problems else calibration, problems)
@@ -251,7 +269,7 @@ def quality_problems(calibration: Calibration, min_separation: float,
                      dpad_threshold: float) -> list[str]:
     """Messages for the player; empty list if the calibration is good."""
     checks = [
-        (calibration.right_rest, calibration.right_pressed,
+        (calibration.right_rest, calibration.right_a,
          "Button A: pressed and rest look too similar. Repeat, pressing down harder."),
         (calibration.left_rest, calibration.left_dpad_left,
          "D-pad left: almost the same as rest. Repeat, moving the thumb further left."),
@@ -260,6 +278,13 @@ def quality_problems(calibration: Calibration, min_separation: float,
         (calibration.left_dpad_left, calibration.left_dpad_right,
          "D-pad: left and right look too similar. Repeat, exaggerating both."),
     ]
+    if calibration.right_b is not None:
+        checks += [
+            (calibration.right_rest, calibration.right_b,
+             "Button B: almost the same as rest. Repeat, tilting the right thumb further outwards."),
+            (calibration.right_a, calibration.right_b,
+             "Buttons A and B: they look too similar. Repeat: A downwards, B outwards."),
+        ]
     problems = [message for a, b, message in checks if separation(a, b) < min_separation]
     problems.extend(_left_thumb_drift_problems(calibration, dpad_threshold))
     if min(calibration.left_hand_size, calibration.right_hand_size) <= 0:
@@ -278,19 +303,28 @@ def _size_range(hand_sizes: dict[Pose, dict[str, np.ndarray]], hand: str) -> tup
 
 
 def _left_thumb_drift_problems(calibration: Calibration, dpad_threshold: float) -> list[str]:
-    """Does the left thumb unintentionally move towards a direction when pressing A?
+    """Does the left thumb unintentionally move towards a direction when pressing A or B?
 
-    The "left at rest while pressing A" pose is required to stay below HALF the
-    D-pad threshold, to leave some margin.
+    The "left at rest while pressing A (or B)" pose is required to stay below
+    HALF the D-pad threshold, to leave some margin.
     """
-    progress = calibration.dpad.progress(calibration.left_rest_while_a.center)
     names = {Button.LEFT: "left", Button.RIGHT: "right"}
+    while_pressing = {"A": calibration.left_rest_while_a, "B": calibration.left_rest_while_b}
     return [
-        f"When pressing A, your left thumb moves towards '{names[button]}' "
+        f"When pressing {name}, your left thumb moves towards '{names[button]}' "
         f"({value:.0%} of the travel). Repeat the calibration, making D-pad "
-        f"{names[button]} more pronounced and keeping the left thumb still when pressing A."
-        for button, value in progress.items() if value >= dpad_threshold / 2
+        f"{names[button]} more pronounced and keeping the left thumb still when pressing {name}."
+        for name, reference in while_pressing.items() if reference is not None
+        for button, value in calibration.dpad.progress(reference.center).items()
+        if value >= dpad_threshold / 2
     ]
+
+
+def left_thumb_drift(calibration: Calibration) -> dict[str, dict[Button, float]]:
+    """Progress of the left thumb towards each direction while pressing A / B (for display)."""
+    references = {"A": calibration.left_rest_while_a, "B": calibration.left_rest_while_b}
+    return {name: calibration.dpad.progress(reference.center)
+            for name, reference in references.items() if reference is not None}
 
 
 def _valid_features(landmarks: np.ndarray | None) -> np.ndarray | None:

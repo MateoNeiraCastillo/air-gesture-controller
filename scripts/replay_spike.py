@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from air_controller.buttons import Button
-from air_controller.calibration import Calibration, CalibrationCollector, Pose
+from air_controller.calibration import SEQUENCE_WITHOUT_B, Calibration, CalibrationCollector, Pose
 from air_controller.classifier import Classifier, FrameReading
 from air_controller.config import load_config
 from air_controller.posture import PostureMonitor
@@ -75,7 +75,7 @@ def calibrate(clips: dict[str, Clip], frames_per_pose: int, min_separation: floa
               ) -> tuple[Classifier | None, Calibration | None, dict[str, int]]:
     """Returns the classifier and, per clip, how many frames the calibration consumed."""
     config = load_config()
-    collector = CalibrationCollector(frames_per_pose)
+    collector = CalibrationCollector(frames_per_pose, SEQUENCE_WITHOUT_B)   # the spike didn't record B
     used: dict[str, int] = {}
     for pose, label in CALIBRATION_CLIPS.items():
         clip = clips[label]

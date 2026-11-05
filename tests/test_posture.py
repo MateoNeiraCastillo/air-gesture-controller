@@ -23,6 +23,7 @@ def make_hand(tip, size: float = 100.0) -> np.ndarray:
 def monitor_factory():
     collector = CalibrationCollector(frames_per_pose=20)
     plan = [(Pose.REST, (60, -40), (60, -40)), (Pose.A_PRESSED, (60, -40), (60, 10)),
+            (Pose.B_PRESSED, (60, -40), (100, -40)),
             (Pose.DPAD_LEFT, (20, -40), (60, -40)), (Pose.DPAD_RIGHT, (100, -40), (60, -40))]
     for pose, left_tip, right_tip in plan:
         while collector.current_pose is pose:
