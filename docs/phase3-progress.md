@@ -34,4 +34,4 @@
 1. **Accessibility permission** on macOS for the app it runs from (VS Code or Terminal). Without it, pynput doesn't raise an error but the keys don't arrive.
 2. **Confirm FullScreenMario's jump key.** According to the documentation found, you move with the arrows or WASD and Shift is for running; the jump is not confirmed. `config.toml` has a provisional `a = "up"`.
 3. **Measure real FPS and latency** with `play.py --dry-run` and then while playing. If the loop stays at ~15 fps, optimize: draw less, or move MediaPipe to its own thread / LIVE_STREAM mode.
-4. **Button B (run = Shift)**, once everything above works.
+4. ~~**Button B**~~ Done: tilting the right thumb outwards. Key profiles per game are selected with `play.py --game <name>`, e.g. `celeste`.
