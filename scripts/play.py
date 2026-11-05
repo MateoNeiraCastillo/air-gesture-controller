@@ -31,7 +31,7 @@ from pathlib import Path
 import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from calibrate_live import LiveCalibration, detect_hands  # noqa: E402  (sibling script, same directory)
+from calibrate_live import MODEL_PATH, LiveCalibration, detect_hands  # noqa: E402  (sibling script, same directory)
 
 from air_controller.buttons import Button  # noqa: E402
 from air_controller.capture import Frame, LatestFrameCamera, VideoFileSource  # noqa: E402
@@ -137,8 +137,10 @@ class Player:
             return "recalibrate"
         if key == ord("p"):
             self.paused = not self.paused
-            if self.paused:
-                self._release_everything()
+            # Pausing releases every key. Resuming starts from "nothing pressed" too, so a
+            # button held at that moment is confirmed and sent again; otherwise its press
+            # (which happened while paused) would never reach the game.
+            self._release_everything()
             print("Paused" if self.paused else "Resumed")
         return None
 
@@ -155,6 +157,9 @@ def main() -> None:
     parser.add_argument("--video", type=Path, help="use a video instead of the camera (testing)")
     parser.add_argument("--game", help="key profile from config.toml ([games.<name>]), e.g. celeste")
     args = parser.parse_args()
+    if not MODEL_PATH.exists():
+        print(f"Model missing at {MODEL_PATH}. Download it as explained in the README (Quick start).")
+        return
 
     config = load_config()
     keys = keys_for_game(config, args.game)

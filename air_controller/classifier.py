@@ -4,10 +4,11 @@ Pure, memoryless logic: one frame in, one reading out. Smoothing over time
 (not releasing a button because of one odd frame) is the job of the state
 machine (layer 4).
 
-- Buttons A and B (right thumb): is the tip closer to rest, to "A pressed"
-  (thumb down) or to "B pressed" (thumb outwards)? Distances measured in noise
-  widths. With a single thumb, A and B exclude each other: they can't be pressed
-  at the same time (in Celeste you jump and then dash).
+- Buttons A and B (right thumb): each one on its own axis. A: is the tip's height
+  closer to "A pressed" (thumb down) than to rest? B: is its sideways position
+  closer to "B pressed" (thumb outwards) than to rest? Distances measured in
+  noise widths. With a single thumb, A and B exclude each other: if both look
+  pressed, the clearer one wins (in Celeste you jump and then dash).
 - D-pad, in two steps:
     1. Direction: the nearest calibrated pose (left or right).
     2. Intensity: how far the thumb has moved from rest towards it.
@@ -24,7 +25,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from air_controller.buttons import Button
-from air_controller.calibration import BUTTON_COLUMNS, DPAD_COLUMNS, Calibration, Reference
+from air_controller.calibration import A_COLUMNS, B_COLUMNS, DPAD_COLUMNS, Calibration, Reference
 from air_controller.config import ClassifierConfig
 from air_controller.features import thumb_position_features
 
@@ -53,17 +54,32 @@ class DpadAxis:
         return float(offset @ self.unit) / self.length
 
 
+@dataclass(frozen=True)
+class ThumbButton:
+    """A right-thumb button, judged only on its own axis (A: down, B: outwards)."""
+
+    button: Button
+    columns: tuple[int, ...]
+    rest: Reference
+    pressed: Reference
+
+    def margin(self, features: np.ndarray) -> float:
+        """> 0 when the thumb is closer to "pressed" than to rest, in noise widths."""
+        point = features[list(self.columns)]
+        scale = _pooled_spread(self.rest.select(self.columns), self.pressed.select(self.columns))
+        to_rest = np.linalg.norm((point - self.rest.center[list(self.columns)]) / scale)
+        to_pressed = np.linalg.norm((point - self.pressed.center[list(self.columns)]) / scale)
+        return float(to_rest - to_pressed)
+
+
 class Classifier:
     def __init__(self, calibration: Calibration, config: ClassifierConfig) -> None:
         self._calibration = calibration
         self._threshold = config.dpad_threshold
-        self._right_targets: dict[Button | None, np.ndarray] = {
-            None: calibration.right_rest.center, Button.A: calibration.right_a.center}
-        references = [calibration.right_rest, calibration.right_a]
+        self._thumb_buttons = [ThumbButton(Button.A, A_COLUMNS, calibration.right_rest, calibration.right_a)]
         if calibration.right_b is not None:
-            self._right_targets[Button.B] = calibration.right_b.center
-            references.append(calibration.right_b)
-        self._button_scale = _pooled_spread(*references)
+            self._thumb_buttons.append(
+                ThumbButton(Button.B, B_COLUMNS, calibration.right_rest, calibration.right_b))
 
     def classify(self, left: np.ndarray | None, right: np.ndarray | None) -> FrameReading:
         """`left`/`right`: landmarks (21, 3) in pixels, or None if the hand is not visible."""
@@ -95,10 +111,11 @@ class Classifier:
         )
 
     def _right_button(self, features: np.ndarray) -> Button | None:
-        """Nearest calibrated pose of the right thumb (None = rest)."""
-        point = features[list(BUTTON_COLUMNS)]
-        return min(self._right_targets, key=lambda button: float(
-            np.linalg.norm((point - self._right_targets[button]) / self._button_scale)))
+        """The pressed right-thumb button (None = rest). One thumb: at most one button,
+        the one the thumb has moved most clearly towards."""
+        margins = {thumb.button: thumb.margin(features) for thumb in self._thumb_buttons}
+        best = max(margins, key=margins.get)
+        return best if margins[best] > 0 else None
 
 
 def _features(landmarks: np.ndarray | None) -> np.ndarray | None:

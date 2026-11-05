@@ -116,3 +116,35 @@ def test_calibration_without_b_never_reports_b() -> None:
     classifier = build_classifier(CalibrationCollector(frames_per_pose=FRAMES, sequence=SEQUENCE_WITHOUT_B))
     reading = classifier.classify(make_hand(*REST), make_hand(*B_PRESSED))
     assert Button.B not in reading.pressed
+
+
+def test_sideways_drift_of_the_right_thumb_does_not_press_a() -> None:
+    """The spike's night case: A was calibrated with the thumb slightly inwards. Later, at
+    rest height but with that same sideways position, all-four-column distances (with tiny
+    sideways noise) called it A. A is judged on the thumb's height only."""
+    from air_controller.calibration import build_calibration
+
+    rng = np.random.default_rng(3)
+
+    def pose(dx: float, dy: float, n: int = 60) -> np.ndarray:
+        # (dx, dy) from the index base and from the wrist; sideways noise 10x smaller
+        noise = rng.normal(0, 1, (n, 4)) * np.array([0.002, 0.02, 0.002, 0.02])
+        return np.array([dx, dy, dx + 0.1, dy - 1.0]) + noise   # same layout as make_hand
+
+    left = {"rest": pose(0.5, -0.4), "left": pose(0.1, -0.4), "right": pose(0.9, -0.4)}
+    samples = {
+        Pose.REST: {"left": left["rest"], "right": pose(0.50, -0.40)},
+        Pose.A_PRESSED: {"left": left["rest"], "right": pose(0.45, 0.10)},   # pressed slightly inwards
+        Pose.DPAD_LEFT: {"left": left["left"]},
+        Pose.DPAD_RIGHT: {"left": left["right"]},
+    }
+    sizes = {pose_: {hand: np.full(60, 100.0) for hand in by_hand} for pose_, by_hand in samples.items()}
+    result = build_calibration(samples, sizes, min_separation=3.0, dpad_threshold=0.5)
+    assert result.ok, result.problems
+    classifier = Classifier(result.calibration, ClassifierConfig(dpad_threshold=0.5))
+    # Thumb at rest height, but where it was sideways while pressing A: not pressed.
+    right = make_hand(0.45 * 100 + 10, -0.40 * 100, noise=0)
+    left_hand = make_hand(0.5 * 100 + 10, -0.4 * 100, noise=0)
+    assert Button.A not in classifier.classify(left_hand, right).pressed
+    # Pushing down still presses A.
+    assert Button.A in classifier.classify(left_hand, make_hand(0.45 * 100 + 10, 0.10 * 100, noise=0)).pressed

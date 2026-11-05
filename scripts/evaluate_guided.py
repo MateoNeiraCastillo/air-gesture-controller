@@ -12,6 +12,7 @@ import numpy as np
 
 from air_controller.buttons import Button
 from air_controller.guided import BUTTON_BITS, StepScore, build_script, score_step
+from air_controller.recordings import guided_sessions
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDED_DIR = ROOT / "data" / "guided"
@@ -19,7 +20,7 @@ TARGET = 95.0
 
 
 def latest_session() -> Path | None:
-    sessions = sorted(GUIDED_DIR.glob("session_*.npz"))
+    sessions = guided_sessions(GUIDED_DIR)
     return sessions[-1] if sessions else None
 
 

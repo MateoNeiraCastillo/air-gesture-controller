@@ -117,7 +117,7 @@ The commit history is the complete list. Versions older than `ff1a4eb` have Span
 
 ## Project status
 
-The controller works end to end, and work is in Phase 3 (playing real games).
+The controller works end to end, and work is in Phase 3 (playing real games). It has been played with the Chrome dino; Celeste Classic (`--game celeste`) is next.
 
 | Measurement | Result |
 |---|---|

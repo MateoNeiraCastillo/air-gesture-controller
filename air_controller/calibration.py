@@ -31,12 +31,17 @@ import numpy as np
 from air_controller.buttons import Button
 from air_controller.features import hand_size, thumb_position_features
 
-# Columns of thumb_position_features used by each hand. Both use all four:
-# A is a vertical movement of the right thumb (dy) and B a horizontal one (dx).
-# A used to use only (1, 3); re-evaluating the 27-10 guided session with all
-# four columns, A scores the same (99.5–99.6 % vs 99.6 %).
+# Columns of thumb_position_features stored for each hand (all four).
 BUTTON_COLUMNS = (0, 1, 2, 3)
 DPAD_COLUMNS = (0, 1, 2, 3)
+# Each right-thumb button is decided on its own axis, as positions within
+# BUTTON_COLUMNS: A is the thumb moving down (dy), B the thumb moving outwards (dx).
+# Deciding A on all four columns was tried and rejected: in the spike's night
+# clips the thumb's sideways position drifted between calibration and play, and
+# because sideways noise is tiny, that drift alone made A look pressed all the
+# time (a_rhythm: 0 presses instead of 30). On dy only, A gets 30 of ~32.
+A_COLUMNS = (1, 3)
+B_COLUMNS = (0, 2)
 
 MAD_TO_STD = 1.4826   # converts MAD to standard deviation for normal data
 MIN_SPREAD = 1e-3     # spread floor: avoids dividing by ~0
@@ -71,6 +76,10 @@ class Reference:
 
     center: np.ndarray
     spread: np.ndarray
+
+    def select(self, columns: tuple[int, ...]) -> "Reference":
+        """The same pose, keeping only some of its features."""
+        return Reference(self.center[list(columns)], self.spread[list(columns)])
 
     @classmethod
     def from_samples(cls, samples: np.ndarray) -> "Reference":
@@ -269,7 +278,7 @@ def quality_problems(calibration: Calibration, min_separation: float,
                      dpad_threshold: float) -> list[str]:
     """Messages for the player; empty list if the calibration is good."""
     checks = [
-        (calibration.right_rest, calibration.right_a,
+        (calibration.right_rest.select(A_COLUMNS), calibration.right_a.select(A_COLUMNS),
          "Button A: pressed and rest look too similar. Repeat, pressing down harder."),
         (calibration.left_rest, calibration.left_dpad_left,
          "D-pad left: almost the same as rest. Repeat, moving the thumb further left."),
@@ -280,7 +289,7 @@ def quality_problems(calibration: Calibration, min_separation: float,
     ]
     if calibration.right_b is not None:
         checks += [
-            (calibration.right_rest, calibration.right_b,
+            (calibration.right_rest.select(B_COLUMNS), calibration.right_b.select(B_COLUMNS),
              "Button B: almost the same as rest. Repeat, tilting the right thumb further outwards."),
             (calibration.right_a, calibration.right_b,
              "Buttons A and B: they look too similar. Repeat: A downwards, B outwards."),

@@ -303,7 +303,7 @@ def main() -> None:
     parser.add_argument("--video", type=Path, help="use a video instead of the camera")
     args = parser.parse_args()
     if not MODEL_PATH.exists():
-        print(f"Model missing at {MODEL_PATH}.")
+        print(f"Model missing at {MODEL_PATH}. Download it as explained in the README (Quick start).")
         return
     config = load_config()
     source = VideoFileSource(args.video) if args.video else LatestFrameCamera()

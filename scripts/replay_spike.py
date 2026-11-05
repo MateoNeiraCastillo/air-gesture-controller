@@ -29,6 +29,7 @@ from air_controller.calibration import SEQUENCE_WITHOUT_B, Calibration, Calibrat
 from air_controller.classifier import Classifier, FrameReading
 from air_controller.config import load_config
 from air_controller.posture import PostureMonitor
+from air_controller.recordings import parse_clip_name
 from air_controller.state_machine import ButtonStateMachine
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -63,7 +64,7 @@ def load_sessions() -> dict[str, dict[str, Clip]]:
     """session → label → Clip (if there are several takes, the last one)."""
     sessions: dict[str, dict[str, Clip]] = defaultdict(dict)
     for path in sorted(LANDMARKS_DIR.glob("*.npz")):
-        label, session, _index = path.stem.rsplit("_", 2)
+        label, session, _index = parse_clip_name(path.stem)
         with np.load(path) as data:
             sessions[session][label] = Clip(data["left"][SETTLE_FRAMES:],
                                             data["right"][SETTLE_FRAMES:])

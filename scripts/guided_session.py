@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from calibrate_live import LiveCalibration, detect_hands  # noqa: E402  (sibling script, same directory)
+from calibrate_live import MODEL_PATH, LiveCalibration, detect_hands  # noqa: E402  (sibling script, same directory)
 
 from air_controller.capture import LatestFrameCamera, VideoFileSource  # noqa: E402
 from air_controller.config import load_config  # noqa: E402
@@ -108,7 +108,7 @@ class GuidedSession:
             following = (f"Next: {self.script[index + 1][1].text}"
                          if index + 1 < len(self.script) else "Last step")
             banner = (step.text, following,
-                      f"Block {block}/3   step {index + 1}/{len(self.script)}")
+                      f"Block {block}/{self.script[-1][0]}   step {index + 1}/{len(self.script)}")
             progress = (elapsed - self.offsets_ms[index]) / step.duration_ms
         return render_game(image, self.app.game_view(
             reading, warnings, status="GUIDED", banner=banner, banner_progress=progress,
@@ -139,6 +139,9 @@ def main() -> None:
     parser.add_argument("--video", type=Path, help="use a video instead of the camera (testing)")
     parser.add_argument("--blocks", type=int, default=3)
     args = parser.parse_args()
+    if not MODEL_PATH.exists():
+        print(f"Model missing at {MODEL_PATH}. Download it as explained in the README (Quick start).")
+        return
     config = load_config()
     source = VideoFileSource(args.video) if args.video else LatestFrameCamera()
     app = LiveCalibration(source, config)

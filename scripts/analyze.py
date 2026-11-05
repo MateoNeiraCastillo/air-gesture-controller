@@ -27,6 +27,7 @@ import numpy as np
 
 from air_controller.centroid import CentroidClassifier
 from air_controller.features import thumb_position_features
+from air_controller.recordings import parse_clip_name
 
 ROOT = Path(__file__).resolve().parent.parent
 LANDMARKS_DIR = ROOT / "data" / "landmarks"
@@ -86,7 +87,7 @@ def load_clips() -> dict[str, dict[str, Clip]]:
     """session → label → Clip. If there are several identical takes, the last one is used."""
     sessions: dict[str, dict[str, Clip]] = defaultdict(dict)
     for path in sorted(LANDMARKS_DIR.glob("*.npz")):
-        label, session, _index = path.stem.rsplit("_", 2)
+        label, session, _index = parse_clip_name(path.stem)
         with np.load(path) as data:
             fps = float(data["fps"])
             settle = int(SETTLE_SECONDS * fps)
