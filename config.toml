@@ -47,9 +47,12 @@ missing_hand_ms = 200
 left = "left"
 right = "right"
 a = "up"
+# B: inclinar el pulgar derecho hacia fuera. Abajo: agacharse en el dino, frenar en SuperTuxKart.
+b = "down"
 
 # Perfiles por juego: solo cambian las teclas indicadas; el resto se toma de [keys].
 # Uso: python scripts/play.py --game celeste
 [games.celeste]
 # Celeste Classic (PICO-8, navegador): flechas para moverse, C (o Z) salta, X hace dash.
 a = "c"
+b = "x"

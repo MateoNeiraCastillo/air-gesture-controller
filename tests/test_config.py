@@ -10,7 +10,7 @@ VALID = {
     "classifier": {"dpad_threshold": 0.5},
     "posture": {"hand_size_ratio_min": 0.7, "hand_size_ratio_max": 1.4, "warning_after_ms": 500},
     "timing": {"press_confirm_ms": 80, "release_confirm_ms": 80, "missing_hand_ms": 200},
-    "keys": {"left": "left", "right": "right", "a": "up"},
+    "keys": {"left": "left", "right": "right", "a": "up", "b": "down"},
 }
 
 
@@ -29,7 +29,7 @@ def test_repository_config_is_valid() -> None:
 def test_valid_config_is_parsed() -> None:
     config = parse_config(VALID)
     assert config.calibration.frames_per_pose == 90
-    assert config.keys == {Button.LEFT: "left", Button.RIGHT: "right", Button.A: "up"}
+    assert config.keys == {Button.LEFT: "left", Button.RIGHT: "right", Button.A: "up", Button.B: "down"}
 
 
 @pytest.mark.parametrize("section,key,value", [
@@ -83,7 +83,8 @@ def with_games(games: dict) -> dict:
 
 def test_game_profile_overrides_only_its_keys() -> None:
     config = parse_config(with_games({"celeste": {"a": "c"}}))
-    assert keys_for_game(config, "celeste") == {Button.LEFT: "left", Button.RIGHT: "right", Button.A: "c"}
+    assert keys_for_game(config, "celeste") == {Button.LEFT: "left", Button.RIGHT: "right",
+                                                Button.A: "c", Button.B: "down"}
     assert keys_for_game(config, None) == config.keys      # sin --game: [keys]
 
 
@@ -111,3 +112,4 @@ def test_game_profile_cannot_repeat_a_key() -> None:
 def test_repository_game_profiles_are_valid() -> None:
     config = load_config()
     assert keys_for_game(config, "celeste")[Button.A] == "c"
+    assert keys_for_game(config, "celeste")[Button.B] == "x"

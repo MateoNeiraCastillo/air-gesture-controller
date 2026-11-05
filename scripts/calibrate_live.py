@@ -1,12 +1,12 @@
 """Calibración en directo y vista de lo que lee el clasificador.
 
-1. Te guía por las 4 posturas (reposo, A pulsado, cruceta izquierda,
-   cruceta derecha). Antes de cada una tienes 3 s para colocarte.
+1. Te guía por las 5 posturas (reposo, A pulsado, B pulsado, cruceta
+   izquierda, cruceta derecha). Antes de cada una tienes 3 s para colocarte.
 2. Si la calibración no pasa el control de calidad, te dice por qué
    (en pantalla y en la terminal). Pulsa R para repetir.
 3. Si pasa, muestra en directo lo que haría el mando:
-   - A: aro naranja = el clasificador lo ve pulsado en este frame;
-        relleno verde = pulsación CONFIRMADA (lo que recibiría el juego).
+   - A y B: aro naranja = el clasificador lo ve pulsado en este frame;
+            relleno verde = pulsación CONFIRMADA (lo que recibiría el juego).
    - Cruceta: una barra que va del reposo (centro) hacia izquierda o derecha.
      La raya blanca marca el umbral. IZQ/DER en verde = confirmado.
    - Avisos del monitor de postura arriba, en rojo.
@@ -34,7 +34,7 @@ from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python import vision
 
 from air_controller.buttons import Button
-from air_controller.calibration import CalibrationCollector, CalibrationResult, Pose
+from air_controller.calibration import CalibrationCollector, CalibrationResult, Pose, left_thumb_drift
 from air_controller.capture import FrameSource, LatestFrameCamera, VideoFileSource
 from air_controller.classifier import Classifier, FrameReading
 from air_controller.config import Config, load_config
@@ -57,6 +57,8 @@ WHITE = (255, 255, 255)
 INSTRUCTIONS = {
     Pose.REST: ["REPOSO", "Sujeta el mando. Pulgares apoyados, sin pulsar nada."],
     Pose.A_PRESSED: ["A PULSADO", "Pulsa A a fondo con el pulgar derecho.",
+                     "El pulgar IZQUIERDO se queda QUIETO, como en reposo."],
+    Pose.B_PRESSED: ["B PULSADO", "Inclina el pulgar derecho hacia FUERA (lejos de la otra mano).",
                      "El pulgar IZQUIERDO se queda QUIETO, como en reposo."],
     Pose.DPAD_LEFT: ["CRUCETA IZQUIERDA", "Lleva el pulgar izquierdo a la izquierda y mantenlo."],
     Pose.DPAD_RIGHT: ["CRUCETA DERECHA", "Lleva el pulgar izquierdo a la derecha y mantenlo.",
@@ -140,22 +142,23 @@ def draw_progress(image: np.ndarray, fraction: float, y: int) -> None:
 
 def draw_reading(image: np.ndarray, reading: FrameReading, threshold: float,
                  held: frozenset[Button]) -> None:
-    """Panel inferior: botón A y barra de la cruceta. `held` = confirmados."""
+    """Panel inferior: botones B y A y barra de la cruceta. `held` = confirmados."""
     height, width = image.shape[:2]
     top = height - 90
     cv2.rectangle(image, (0, top), (width, height), (30, 30, 30), -1)
 
-    # Botón A
-    center = (width - 60, top + 45)
-    if Button.A in held:
-        cv2.circle(image, center, 28, GREEN, -1)
-    cv2.circle(image, center, 28, ORANGE if Button.A in reading.pressed else GRAY, 3)
-    put_lines(image, ["A"], (center[0] - 9, center[1] + 8), WHITE, 0.8)
+    # Botones B y A (en el orden del mando de NES: B a la izquierda)
+    for button, x in ((Button.B, width - 130), (Button.A, width - 60)):
+        center = (x, top + 45)
+        if button in held:
+            cv2.circle(image, center, 26, GREEN, -1)
+        cv2.circle(image, center, 26, ORANGE if button in reading.pressed else GRAY, 3)
+        put_lines(image, [button.name], (center[0] - 9, center[1] + 8), WHITE, 0.8)
     if not reading.right_visible:
         put_lines(image, ["sin mano der."], (width - 130, top + 85), RED, 0.45)
 
     # Cruceta: -1 (izquierda calibrada) ... 0 (reposo) ... +1 (derecha calibrada)
-    bar_left, bar_right = 30, width - 140
+    bar_left, bar_right = 30, width - 175
     mid = (bar_left + bar_right) // 2
     half = (bar_right - bar_left) // 2
     y = top + 45
@@ -263,12 +266,11 @@ class LiveCalibration:
             self.classifier = Classifier(self.result.calibration, self.config.classifier)
             self.posture = PostureMonitor(self.result.calibration, self.config.posture)
             self.machine = ButtonStateMachine(self.config.timing)
-            progress = self.result.calibration.dpad.progress(
-                self.result.calibration.left_rest_while_a.center)
             print("Calibración ACEPTADA.")
-            print(f"  Pulgar izquierdo al pulsar A: {progress[Button.LEFT]:.0%} hacia izquierda, "
-                  f"{progress[Button.RIGHT]:.0%} hacia derecha (límite "
-                  f"{self.config.classifier.dpad_threshold / 2:.0%})")
+            for name, progress in left_thumb_drift(self.result.calibration).items():
+                print(f"  Pulgar izquierdo al pulsar {name}: {progress[Button.LEFT]:.0%} hacia izquierda, "
+                      f"{progress[Button.RIGHT]:.0%} hacia derecha (límite "
+                      f"{self.config.classifier.dpad_threshold / 2:.0%})")
         else:
             print("Calibración RECHAZADA:", *self.result.problems, sep="\n  ")
         self._save_calibration()

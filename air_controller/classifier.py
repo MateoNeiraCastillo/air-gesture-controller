@@ -4,8 +4,10 @@ Lógica pura y sin memoria: un frame entra, una lectura sale. El suavizado en
 el tiempo (no soltar un botón por un frame raro) es cosa de la máquina de
 estados (capa 4).
 
-- Botón A: ¿la punta del pulgar derecho está más cerca del "pulsado" o del
-  "reposo" calibrados? Distancias medidas en anchuras de ruido.
+- Botones A y B (pulgar derecho): ¿la punta está más cerca del reposo, de
+  "A pulsado" (pulgar abajo) o de "B pulsado" (pulgar hacia fuera)? Distancias
+  medidas en anchuras de ruido. Con un solo pulgar, A y B se excluyen: no se
+  pueden pulsar a la vez (en Celeste se salta y luego se hace dash).
 - Cruceta, en dos pasos:
     1. Dirección: la postura calibrada (izquierda o derecha) más cercana.
     2. Intensidad: cuánto ha avanzado el pulgar desde el reposo hacia ella.
@@ -54,7 +56,13 @@ class Classifier:
     def __init__(self, calibration: Calibration, config: ClassifierConfig) -> None:
         self._calibration = calibration
         self._threshold = config.dpad_threshold
-        self._button_scale = _pooled_spread(calibration.right_rest, calibration.right_pressed)
+        self._right_targets: dict[Button | None, np.ndarray] = {
+            None: calibration.right_rest.center, Button.A: calibration.right_a.center}
+        references = [calibration.right_rest, calibration.right_a]
+        if calibration.right_b is not None:
+            self._right_targets[Button.B] = calibration.right_b.center
+            references.append(calibration.right_b)
+        self._button_scale = _pooled_spread(*references)
 
     def classify(self, left: np.ndarray | None, right: np.ndarray | None) -> FrameReading:
         """`left`/`right`: landmarks (21, 3) en píxeles, o None si no se ve la mano."""
@@ -62,8 +70,10 @@ class Classifier:
         left_features = _features(left)
         right_features = _features(right)
 
-        if right_features is not None and self._a_pressed(right_features):
-            pressed.add(Button.A)
+        if right_features is not None:
+            button = self._right_button(right_features)
+            if button is not None:
+                pressed.add(button)
 
         progress = {Button.LEFT: float("nan"), Button.RIGHT: float("nan")}
         if left_features is not None:
@@ -81,11 +91,11 @@ class Classifier:
             dpad_right_progress=progress[Button.RIGHT],
         )
 
-    def _a_pressed(self, features: np.ndarray) -> bool:
+    def _right_button(self, features: np.ndarray) -> Button | None:
+        """Postura calibrada más cercana del pulgar derecho (None = reposo)."""
         point = features[list(BUTTON_COLUMNS)]
-        to_rest = np.linalg.norm((point - self._calibration.right_rest.center) / self._button_scale)
-        to_pressed = np.linalg.norm((point - self._calibration.right_pressed.center) / self._button_scale)
-        return bool(to_pressed < to_rest)
+        return min(self._right_targets, key=lambda button: float(
+            np.linalg.norm((point - self._right_targets[button]) / self._button_scale)))
 
 
 def _features(landmarks: np.ndarray | None) -> np.ndarray | None:

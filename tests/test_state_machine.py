@@ -75,3 +75,11 @@ def test_release_all_releases_everything_once() -> None:
     assert {e.button for e in released} == {Button.A, Button.LEFT}
     assert all(not e.pressed for e in released)
     assert machine.release_all(1040) == []
+
+
+def test_b_belongs_to_the_right_hand() -> None:
+    """Sin mano derecha > missing_hand_ms, B se suelta como A."""
+    frames = [reading(Button.B, Button.LEFT)] * 4 + [reading(Button.LEFT, right=False)] * 8
+    machine, events = run(frames)
+    assert ButtonEvent(Button.B, False, 360) in events
+    assert machine.held == {Button.LEFT}
