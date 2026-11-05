@@ -19,6 +19,7 @@ haz clic en la ventana del juego. En macOS, la app desde la que ejecutas
 Uso:
     python scripts/play.py --dry-run     # no envía teclas: las imprime
     python scripts/play.py               # juega de verdad
+    python scripts/play.py --game celeste  # teclas del perfil [games.celeste]
 """
 
 import argparse
@@ -43,7 +44,7 @@ from calibrate_live import (  # noqa: E402  (script hermano, mismo directorio)
 )
 
 from air_controller.capture import Frame, LatestFrameCamera, VideoFileSource  # noqa: E402
-from air_controller.config import load_config  # noqa: E402
+from air_controller.config import keys_for_game, load_config  # noqa: E402
 from air_controller.latency import LatencyTracker  # noqa: E402
 from air_controller.output import KeyOutput, PynputKeySender, RecordingKeySender  # noqa: E402
 
@@ -150,15 +151,18 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true",
                         help="no enviar teclas: imprimirlas en la terminal")
     parser.add_argument("--video", type=Path, help="usar un vídeo en vez de la cámara (pruebas)")
+    parser.add_argument("--game", help="perfil de teclas de config.toml ([games.<nombre>]), p. ej. celeste")
     args = parser.parse_args()
 
     config = load_config()
+    keys = keys_for_game(config, args.game)
+    print("Teclas: " + ", ".join(f"{button.value} → {key}" for button, key in keys.items()))
     sender = RecordingKeySender(echo=True) if args.dry_run else PynputKeySender()
     source = VideoFileSource(args.video) if args.video else LatestFrameCamera()
     app = LiveCalibration(source, config)
     player = None
     try:
-        with KeyOutput(sender, config.keys) as output:
+        with KeyOutput(sender, keys) as output:
             player = Player(app, output)
             player.run()
     except KeyboardInterrupt:

@@ -43,7 +43,13 @@ release_confirm_ms = 40
 missing_hand_ms = 200
 
 [keys]
-# Tecla que envía cada botón. PENDIENTE: confirmar con FullScreenMario en la Fase 3.
+# Tecla que envía cada botón por defecto (dino de Chrome, SuperTuxKart...).
 left = "left"
 right = "right"
 a = "up"
+
+# Perfiles por juego: solo cambian las teclas indicadas; el resto se toma de [keys].
+# Uso: python scripts/play.py --game celeste
+[games.celeste]
+# Celeste Classic (PICO-8, navegador): flechas para moverse, C (o Z) salta, X hace dash.
+a = "c"
