@@ -1,24 +1,25 @@
-"""El controlador completo: juega con el mando invisible.
+"""The complete controller: play with the invisible controller.
 
-Flujo:
-  1. Calibración (como en calibrate_live.py; R repite si se rechaza).
-  2. Juego: cámara → manos → clasificador → máquina de estados → teclas.
-  3. Al salir imprime la latencia por etapas (p50 / p95).
+Flow:
+  1. Calibration, guided in the center of the screen (R repeats if rejected).
+     SUCCESS is shown when it is accepted.
+  2. Game: camera → hands → classifier → state machine → keys.
+  3. On exit it prints the per-stage latency (p50 / p95).
 
-Teclas (con la ventana de la cámara enfocada):
-  P = pausa / reanudar (suelta todas las teclas)
-  R = recalibrar       (suelta todas las teclas)
-  Q = salir
-Freno de emergencia: aparta las manos de la cámara. Pasados `missing_hand_ms`
-(200 ms) se sueltan todas las teclas.
+Keys (with the camera window focused):
+  P = pause / resume (releases all keys)
+  R = recalibrate    (releases all keys)
+  Q = quit
+Emergency brake: move your hands away from the camera. After `missing_hand_ms`
+(200 ms) all keys are released.
 
-IMPORTANTE: las teclas van a la ventana que tenga el foco. Tras calibrar,
-haz clic en la ventana del juego. En macOS, la app desde la que ejecutas
-(Terminal o VS Code) necesita permiso de Accesibilidad.
+IMPORTANT: keys go to whichever window has focus. After calibrating, click
+on the game window. On macOS, the app you run from (Terminal or VS Code)
+needs the Accessibility permission.
 
-Uso:
-    python scripts/play.py --dry-run     # no envía teclas: las imprime
-    python scripts/play.py               # juega de verdad
+Usage:
+    python scripts/play.py --dry-run     # doesn't send keys: prints them
+    python scripts/play.py               # plays for real
 """
 
 import argparse
@@ -29,39 +30,29 @@ from pathlib import Path
 import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from calibrate_live import (  # noqa: E402  (script hermano, mismo directorio)
-    GRAY,
-    GREEN,
-    RED,
-    WINDOW,
-    LiveCalibration,
-    detect_hands,
-    draw_hands,
-    draw_reading,
-    put_lines,
-    wrap,
-)
+from calibrate_live import LiveCalibration, detect_hands  # noqa: E402  (sibling script, same directory)
 
 from air_controller.capture import Frame, LatestFrameCamera, VideoFileSource  # noqa: E402
 from air_controller.config import load_config  # noqa: E402
+from air_controller.dashboard import GREEN, WINDOW, YELLOW, draw_hands, render_game  # noqa: E402
 from air_controller.latency import LatencyTracker  # noqa: E402
 from air_controller.output import KeyOutput, PynputKeySender, RecordingKeySender  # noqa: E402
 
-YELLOW = (0, 220, 255)
-
 
 class Player:
-    def __init__(self, app: LiveCalibration, output: KeyOutput, show: bool = True) -> None:
+    def __init__(self, app: LiveCalibration, output: KeyOutput, show: bool = True,
+                 dry_run: bool = False) -> None:
         self.app = app
         self.output = output
         self.show = show
+        self.dry_run = dry_run
         self.paused = False
         self.latency = LatencyTracker()
 
     # ------------------------------------------------------------------ #
 
     def run(self) -> None:
-        """Calibra y juega hasta Q (o hasta que se acabe el vídeo)."""
+        """Calibrates and plays until Q (or until the video ends)."""
         while True:
             if not self._calibrate():
                 return
@@ -71,14 +62,14 @@ class Player:
             self.app.restart()                 # "recalibrate"
 
     def _calibrate(self) -> bool:
-        while not (self.app.result is not None and self.app.result.ok):
+        while not self.app.ready:
             if not self.app.step():
                 return False
-        print("\nCalibración aceptada. ¡A jugar! Haz clic en la ventana del juego.")
+        print("\nCalibration accepted. Let's play! Click on the game window.")
         return True
 
     def _play(self) -> str:
-        """Bucle de juego. Devuelve 'quit' o 'recalibrate'."""
+        """Game loop. Returns 'quit' or 'recalibrate'."""
         while True:
             frame = self.app.source.read()
             if frame is None:
@@ -93,35 +84,44 @@ class Player:
     def _process(self, frame: Frame):
         start = time.perf_counter()
         self.latency.add_frame(start)
-        self.latency.add_stage("espera del frame", (start - frame.captured_s) * 1000)
+        self.latency.add_stage("frame wait", (start - frame.captured_s) * 1000)
 
         left, right = detect_hands(self.app.landmarker, frame.image, frame.timestamp_ms)
         detected = time.perf_counter()
-        self.latency.add_stage("detección (MediaPipe)", (detected - start) * 1000)
+        self.latency.add_stage("detection (MediaPipe)", (detected - start) * 1000)
 
         reading = self.app.classifier.classify(left, right)
         events = self.app.machine.update(reading, frame.timestamp_ms)
         warnings = self.app.posture.update(left, right, frame.timestamp_ms)
         decided = time.perf_counter()
-        self.latency.add_stage("clasificar + estados", (decided - detected) * 1000)
+        self.latency.add_stage("classify + states", (decided - detected) * 1000)
 
         if not self.paused and events:
             self.output.apply(events)
+            self.app.count_presses(events)
             sent = time.perf_counter()
-            self.latency.add_stage("envío de teclas", (sent - decided) * 1000)
+            self.latency.add_stage("key sending", (sent - decided) * 1000)
             self.latency.add_end_to_end((sent - frame.captured_s) * 1000)
 
         image = frame.image
         draw_hands(image, left, right)
-        draw_reading(image, reading, self.app.config.classifier.dpad_threshold, self.app.machine.held)
-        status = ["PAUSA (P para seguir)"] if self.paused else ["JUGANDO"]
-        status.append(f"{self.latency.fps():.0f} fps   teclas: "
-                      f"{' '.join(sorted(self.output.pressed_keys)) or '-'}")
-        put_lines(image, status, (15, 30), YELLOW if self.paused else GREEN)
-        if warnings:
-            put_lines(image, [line for w in warnings for line in wrap(w)], (15, 90), RED, 0.5)
-        put_lines(image, ["P pausa  R recalibrar  Q salir"], (15, image.shape[0] - 100), GRAY, 0.45)
-        return image
+        return render_game(image, self._view(reading, warnings))
+
+    def _view(self, reading, warnings):
+        keys = self.app.config.keys
+        down = self.output.pressed_keys
+        info = [f"{self.latency.fps():.0f} fps"]
+        info.append("DRY RUN: no keys are sent, they are printed in the terminal." if self.dry_run
+                    else "Click your game window: keys go to the window in focus.")
+        info.append("To use P, R or Q, click this window first.")
+        return self.app.game_view(
+            reading, warnings,
+            sent=frozenset(button for button, key in keys.items() if key in down),
+            status="PAUSED" if self.paused else "PLAYING",
+            status_color=YELLOW if self.paused else GREEN,
+            info=tuple(info),
+            hints=("P  pause", "R  recalibrate", "Q  quit"),
+        )
 
     def _handle_keys(self, image) -> str | None:
         if not self.show:
@@ -136,11 +136,11 @@ class Player:
             self.paused = not self.paused
             if self.paused:
                 self._release_everything()
-            print("Pausa" if self.paused else "Reanudado")
+            print("Paused" if self.paused else "Resumed")
         return None
 
     def _release_everything(self) -> None:
-        """Suelta en la máquina de estados Y en el teclado: nada queda pulsado."""
+        """Releases in the state machine AND on the keyboard: nothing stays pressed."""
         self.app.machine.release_all(self.app.last_timestamp_ms)
         self.output.release_all()
 
@@ -148,8 +148,8 @@ class Player:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Air Gesture Controller.")
     parser.add_argument("--dry-run", action="store_true",
-                        help="no enviar teclas: imprimirlas en la terminal")
-    parser.add_argument("--video", type=Path, help="usar un vídeo en vez de la cámara (pruebas)")
+                        help="don't send keys: print them in the terminal")
+    parser.add_argument("--video", type=Path, help="use a video instead of the camera (testing)")
     args = parser.parse_args()
 
     config = load_config()
@@ -159,10 +159,10 @@ def main() -> None:
     player = None
     try:
         with KeyOutput(sender, config.keys) as output:
-            player = Player(app, output)
+            player = Player(app, output, dry_run=args.dry_run)
             player.run()
     except KeyboardInterrupt:
-        print("\nInterrumpido.")
+        print("\nInterrupted.")
     finally:
         app.close()
         if player is not None:

@@ -1,9 +1,9 @@
-"""Clasificador por centroide: cada clase es la media de sus muestras.
+"""Centroid classifier: each class is the mean of its samples.
 
-Se usa para la calibración por sesión: unos segundos de cada postura bastan
-para colocar los centroides, y cada frame nuevo se asigna al más cercano.
-Las features se estandarizan (media 0, desviación 1) para que ninguna domine
-solo por tener una escala mayor.
+Used for per-session calibration: a few seconds of each pose are enough to
+place the centroids, and each new frame is assigned to the nearest one.
+Features are standardized (mean 0, deviation 1) so that none dominates just
+because it has a larger scale.
 """
 
 from dataclasses import dataclass
@@ -18,15 +18,15 @@ class CentroidClassifier:
     labels: tuple[str, ...]
     mean: np.ndarray
     std: np.ndarray
-    centroids: np.ndarray  # (clases, features), en espacio estandarizado
+    centroids: np.ndarray  # (classes, features), in standardized space
 
     @classmethod
     def fit(cls, samples: dict[str, np.ndarray]) -> "CentroidClassifier":
-        """`samples`: etiqueta → array (n, features). Las filas con NaN se ignoran."""
+        """`samples`: label → array (n, features). Rows with NaN are ignored."""
         clean = {label: _drop_nan_rows(values) for label, values in samples.items()}
         empty = [label for label, values in clean.items() if len(values) == 0]
         if empty:
-            raise ValueError(f"Sin muestras válidas para: {', '.join(empty)}")
+            raise ValueError(f"No valid samples for: {', '.join(empty)}")
         stacked = np.vstack(list(clean.values()))
         mean = stacked.mean(axis=0)
         std = stacked.std(axis=0)
@@ -35,7 +35,7 @@ class CentroidClassifier:
         return cls(tuple(clean), mean, std, centroids)
 
     def predict(self, features: np.ndarray) -> np.ndarray:
-        """Etiqueta por fila; UNKNOWN donde la fila tiene NaN (mano no detectada)."""
+        """Label per row; UNKNOWN where the row has NaN (hand not detected)."""
         features = np.atleast_2d(features)
         result = np.full(len(features), UNKNOWN, dtype=object)
         valid = ~np.isnan(features).any(axis=1)

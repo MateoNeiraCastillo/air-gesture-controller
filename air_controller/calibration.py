@@ -1,24 +1,25 @@
-"""Calibración por sesión: aprender cómo son TUS posturas antes de jugar.
+"""Per-session calibration: learn what YOUR poses look like before playing.
 
-En el spike vimos que las referencias de una sesión no sirven en otra (53–67 %
-de acierto), así que cada partida empieza calibrando cuatro posturas:
+In the spike we saw that one session's references don't work in another (53–67 %
+accuracy), so every game starts by calibrating four poses:
 
-    1. reposo       (las dos manos)  → referencia de "nada pulsado"
-    2. A pulsado    (las dos manos)  → la izquierda debe seguir en reposo
-    3. cruceta izq. (mano izquierda)
-    4. cruceta der. (mano izquierda)
+    1. rest         (both hands)  → reference for "nothing pressed"
+    2. A pressed    (both hands)  → the left hand must stay at rest
+    3. D-pad left   (left hand)
+    4. D-pad right  (left hand)
 
-Decisiones:
-- Se cuentan frames VÁLIDOS (mano detectada), no segundos: si MediaPipe tarda
-  en ver la mano, la calibración espera en vez de quedarse sin datos.
-- Referencias con mediana y dispersión robusta (MAD): un landmark disparatado
-  ocasional no mueve la referencia.
-- Control de calidad: si dos posturas quedan demasiado juntas, la calibración
-  se rechaza con un mensaje que dice qué repetir. Incluye el caso que vimos en
-  el spike (noche): al pulsar A, el pulgar izquierdo se iba solo a la postura
-  de "derecha", y el mando habría pulsado derecha sin querer todo el rato.
+Decisions:
+- VALID frames (hand detected) are counted, not seconds: if MediaPipe is slow
+  to see the hand, calibration waits instead of running out of data.
+- References use the median and a robust spread (MAD): an occasional wild
+  landmark doesn't move the reference.
+- Quality control: if two poses end up too close together, the calibration
+  is rejected with a message saying what to repeat. This includes the case we
+  saw in the spike (night): when pressing A, the left thumb drifted on its own
+  to the "right" pose, and the controller would have pressed right by accident
+  the whole time.
 
-Todo es lógica pura: recibe landmarks, no toca la cámara.
+It is all pure logic: it takes landmarks, it never touches the camera.
 """
 
 from dataclasses import dataclass, field
@@ -29,25 +30,25 @@ import numpy as np
 from air_controller.buttons import Button
 from air_controller.features import hand_size, thumb_position_features
 
-# Columnas de thumb_position_features usadas por cada control (ver spike):
-# botón A solo con la altura de la punta; la cruceta con las cuatro.
+# Columns of thumb_position_features used by each control (see spike):
+# button A only uses the tip height; the D-pad uses all four.
 BUTTON_COLUMNS = (1, 3)
 DPAD_COLUMNS = (0, 1, 2, 3)
 
-MAD_TO_STD = 1.4826   # convierte MAD en desviación típica para datos normales
-MIN_SPREAD = 1e-3     # suelo de la dispersión: evita dividir entre ~0
+MAD_TO_STD = 1.4826   # converts MAD to standard deviation for normal data
+MIN_SPREAD = 1e-3     # spread floor: avoids dividing by ~0
 
 
 class Pose(Enum):
-    REST = "reposo"
-    A_PRESSED = "A pulsado"
-    DPAD_LEFT = "cruceta izquierda"
-    DPAD_RIGHT = "cruceta derecha"
+    REST = "rest"
+    A_PRESSED = "A pressed"
+    DPAD_LEFT = "D-pad left"
+    DPAD_RIGHT = "D-pad right"
 
 
 CALIBRATION_SEQUENCE = (Pose.REST, Pose.A_PRESSED, Pose.DPAD_LEFT, Pose.DPAD_RIGHT)
 
-# Qué manos tienen que verse en cada postura para que el frame cuente.
+# Which hands must be visible in each pose for the frame to count.
 REQUIRED_HANDS = {
     Pose.REST: ("left", "right"),
     Pose.A_PRESSED: ("right", "left"),
@@ -58,7 +59,7 @@ REQUIRED_HANDS = {
 
 @dataclass(frozen=True)
 class Reference:
-    """Una postura resumida: centro (mediana) y dispersión robusta por feature."""
+    """A summarised pose: center (median) and robust spread per feature."""
 
     center: np.ndarray
     spread: np.ndarray
@@ -72,11 +73,11 @@ class Reference:
 
 @dataclass(frozen=True)
 class DpadGeometry:
-    """La cruceta calibrada, en un espacio escalado por el ruido de las posturas.
+    """The calibrated D-pad, in a space scaled by the noise of the poses.
 
-    - nearest(): qué dirección calibrada (izquierda o derecha) está más cerca.
-    - progress(): cuánto ha avanzado el pulgar desde el reposo hacia cada una
-      (0 = reposo, 1 = como al calibrar).
+    - nearest(): which calibrated direction (left or right) is closest.
+    - progress(): how far the thumb has moved from rest towards each one
+      (0 = rest, 1 = as during calibration).
     """
 
     scale: np.ndarray
@@ -107,19 +108,19 @@ class DpadGeometry:
 
 @dataclass(frozen=True)
 class Calibration:
-    """Todo lo que el clasificador necesita saber de esta sesión."""
+    """Everything the classifier needs to know about this session."""
 
-    right_rest: Reference         # columnas BUTTON_COLUMNS
-    right_pressed: Reference      # columnas BUTTON_COLUMNS
-    left_rest: Reference          # columnas DPAD_COLUMNS
-    left_rest_while_a: Reference  # pulgar izquierdo mientras la derecha pulsa A
-    left_dpad_left: Reference     # columnas DPAD_COLUMNS
-    left_dpad_right: Reference    # columnas DPAD_COLUMNS
+    right_rest: Reference         # BUTTON_COLUMNS columns
+    right_pressed: Reference      # BUTTON_COLUMNS columns
+    left_rest: Reference          # DPAD_COLUMNS columns
+    left_rest_while_a: Reference  # left thumb while the right hand presses A
+    left_dpad_left: Reference     # DPAD_COLUMNS columns
+    left_dpad_right: Reference    # DPAD_COLUMNS columns
     dpad: DpadGeometry
-    left_hand_size: float         # píxeles (mediana); para avisar si la mano gira o se aleja
+    left_hand_size: float         # pixels (median); to warn if the hand rotates or moves away
     right_hand_size: float
-    # Rango de tamaños (mediana de cada postura): la mano puede inclinarse algo al
-    # mover el pulgar (en el spike de día, la izquierda iba del 77 % al 130 %).
+    # Size range (median of each pose): the hand may tilt a bit when moving
+    # the thumb (in the daytime spike, the left one ranged from 77 % to 130 %).
     left_size_range: tuple[float, float] = (0.0, 0.0)
     right_size_range: tuple[float, float] = (0.0, 0.0)
 
@@ -135,29 +136,29 @@ class CalibrationResult:
 
 
 def separation(a: Reference, b: Reference) -> float:
-    """Distancia entre dos posturas medida en desviaciones típicas combinadas.
+    """Distance between two poses measured in pooled standard deviations.
 
-    Mira cuántas "anchuras de ruido" hay entre los centros: 1 = se solapan
-    mucho, 3 o más = un umbral simple las distingue con fiabilidad.
+    Counts how many "noise widths" lie between the centers: 1 = they overlap
+    a lot, 3 or more = a simple threshold tells them apart reliably.
     """
     pooled = np.sqrt((a.spread ** 2 + b.spread ** 2) / 2)
     return float(np.linalg.norm((a.center - b.center) / pooled))
 
 
 class CalibrationCollector:
-    """Va recogiendo frames postura a postura. Se alimenta frame a frame.
+    """Collects frames pose by pose. Fed one frame at a time.
 
-    Uso:
+    Usage:
         collector = CalibrationCollector(frames_per_pose=90)
         while not collector.done:
-            collector.add(left_landmarks, right_landmarks)   # None si no se ve
-            ...mostrar collector.current_pose y collector.progress...
+            collector.add(left_landmarks, right_landmarks)   # None if not visible
+            ...show collector.current_pose and collector.progress...
         result = collector.build(min_separation=3.0)
     """
 
     def __init__(self, frames_per_pose: int) -> None:
         if frames_per_pose < 1:
-            raise ValueError("frames_per_pose debe ser >= 1")
+            raise ValueError("frames_per_pose must be >= 1")
         self.frames_per_pose = frames_per_pose
         self._step = 0
         self._features: dict[Pose, dict[str, list[np.ndarray]]] = {
@@ -177,7 +178,7 @@ class CalibrationCollector:
 
     @property
     def progress(self) -> float:
-        """Fracción completada de la postura actual (0 a 1)."""
+        """Completed fraction of the current pose (0 to 1)."""
         pose = self.current_pose
         if pose is None:
             return 1.0
@@ -185,7 +186,7 @@ class CalibrationCollector:
         return len(self._features[pose][hand]) / self.frames_per_pose
 
     def add(self, left: np.ndarray | None, right: np.ndarray | None) -> bool:
-        """Añade un frame. Devuelve True si contó (se veían las manos necesarias)."""
+        """Adds a frame. Returns True if it counted (the required hands were visible)."""
         pose = self.current_pose
         if pose is None:
             return False
@@ -202,16 +203,16 @@ class CalibrationCollector:
 
     def build(self, min_separation: float, dpad_threshold: float) -> CalibrationResult:
         if not self.done:
-            return CalibrationResult(None, ["La calibración no ha terminado."])
+            return CalibrationResult(None, ["Calibration has not finished."])
         return build_calibration(self.samples(), self.hand_sizes(), min_separation, dpad_threshold)
 
     def samples(self) -> dict[Pose, dict[str, np.ndarray]]:
-        """Features recogidas hasta ahora: postura → mano → array (frames, 4)."""
+        """Features collected so far: pose → hand → array (frames, 4)."""
         return {pose: {hand: np.array(rows) for hand, rows in by_hand.items() if rows}
                 for pose, by_hand in self._features.items()}
 
     def hand_sizes(self) -> dict[Pose, dict[str, np.ndarray]]:
-        """Tamaños de mano recogidos: postura → mano → array de píxeles."""
+        """Collected hand sizes: pose → hand → array of pixels."""
         return {pose: {hand: np.array(sizes) for hand, sizes in by_hand.items() if sizes}
                 for pose, by_hand in self._hand_sizes.items()}
 
@@ -220,9 +221,9 @@ def build_calibration(samples: dict[Pose, dict[str, np.ndarray]],
                       hand_sizes: dict[Pose, dict[str, np.ndarray]],
                       min_separation: float,
                       dpad_threshold: float) -> CalibrationResult:
-    """Crea la Calibration y comprueba su calidad.
+    """Builds the Calibration and checks its quality.
 
-    `samples[pose][mano]`: array (frames, 4) de thumb_position_features.
+    `samples[pose][hand]`: array (frames, 4) of thumb_position_features.
     """
     button = list(BUTTON_COLUMNS)
     dpad = list(DPAD_COLUMNS)
@@ -248,21 +249,21 @@ def build_calibration(samples: dict[Pose, dict[str, np.ndarray]],
 
 def quality_problems(calibration: Calibration, min_separation: float,
                      dpad_threshold: float) -> list[str]:
-    """Mensajes para el jugador; lista vacía si la calibración es buena."""
+    """Messages for the player; empty list if the calibration is good."""
     checks = [
         (calibration.right_rest, calibration.right_pressed,
-         "Botón A: pulsado y reposo se parecen demasiado. Repite pulsando más a fondo."),
+         "Button A: pressed and rest look too similar. Repeat, pressing down harder."),
         (calibration.left_rest, calibration.left_dpad_left,
-         "Cruceta izquierda: casi igual que el reposo. Repite llevando el pulgar más a la izquierda."),
+         "D-pad left: almost the same as rest. Repeat, moving the thumb further left."),
         (calibration.left_rest, calibration.left_dpad_right,
-         "Cruceta derecha: casi igual que el reposo. Repite llevando el pulgar más a la derecha."),
+         "D-pad right: almost the same as rest. Repeat, moving the thumb further right."),
         (calibration.left_dpad_left, calibration.left_dpad_right,
-         "Cruceta: izquierda y derecha se parecen demasiado. Repite exagerando las dos."),
+         "D-pad: left and right look too similar. Repeat, exaggerating both."),
     ]
     problems = [message for a, b, message in checks if separation(a, b) < min_separation]
     problems.extend(_left_thumb_drift_problems(calibration, dpad_threshold))
     if min(calibration.left_hand_size, calibration.right_hand_size) <= 0:
-        problems.append("No se pudo medir el tamaño de la mano. Repite con las manos bien visibles.")
+        problems.append("Could not measure hand size. Repeat with your hands clearly visible.")
     return problems
 
 
@@ -277,17 +278,17 @@ def _size_range(hand_sizes: dict[Pose, dict[str, np.ndarray]], hand: str) -> tup
 
 
 def _left_thumb_drift_problems(calibration: Calibration, dpad_threshold: float) -> list[str]:
-    """¿Se va el pulgar izquierdo, sin querer, hacia una dirección al pulsar A?
+    """Does the left thumb unintentionally move towards a direction when pressing A?
 
-    Se exige que la postura "izquierda en reposo mientras pulsas A" se quede por
-    debajo de la MITAD del umbral de la cruceta, para dejar margen.
+    The "left at rest while pressing A" pose is required to stay below HALF the
+    D-pad threshold, to leave some margin.
     """
     progress = calibration.dpad.progress(calibration.left_rest_while_a.center)
-    names = {Button.LEFT: "izquierda", Button.RIGHT: "derecha"}
+    names = {Button.LEFT: "left", Button.RIGHT: "right"}
     return [
-        f"Al pulsar A, tu pulgar izquierdo se mueve hacia '{names[button]}' "
-        f"({value:.0%} del recorrido). Repite la calibración marcando más la cruceta "
-        f"{names[button]} y dejando el pulgar izquierdo quieto al pulsar A."
+        f"When pressing A, your left thumb moves towards '{names[button]}' "
+        f"({value:.0%} of the travel). Repeat the calibration, making D-pad "
+        f"{names[button]} more pronounced and keeping the left thumb still when pressing A."
         for button, value in progress.items() if value >= dpad_threshold / 2
     ]
 

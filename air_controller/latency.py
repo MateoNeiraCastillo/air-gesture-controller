@@ -1,12 +1,12 @@
-"""Medición de latencia del bucle, por etapas.
+"""Loop latency measurement, per stage.
 
-Para cada frame apunta cuánto tarda cada etapa (en ms) y, cuando se envía una
-tecla, la latencia de punta a punta: desde que la cámara entregó el frame
-hasta que la tecla sale hacia el juego.
+For each frame it records how long each stage takes (in ms) and, when a key
+is sent, the end-to-end latency: from when the camera delivered the frame
+until the key goes out to the game.
 
-Lo que NO mide: el retraso interno de la cámara (exposición + USB, ~30–60 ms
-típicos en webcams) ni lo que tarde el navegador en pintar. Es la parte que
-controla nuestro código, que es la que podemos mejorar.
+What it does NOT measure: the camera's internal delay (exposure + USB, ~30–60 ms
+typical for webcams) or how long the browser takes to paint. It's the part
+our code controls, which is the part we can improve.
 """
 
 from collections import defaultdict
@@ -37,14 +37,14 @@ class LatencyTracker:
         return (len(self.frame_times_s) - 1) / span if span > 0 else float("nan")
 
     def summary(self) -> str:
-        lines = ["", "== Latencia (ms) ==", f"{'etapa':<22}{'p50':>8}{'p95':>8}{'max':>8}"]
+        lines = ["", "== Latency (ms) ==", f"{'stage':<22}{'p50':>8}{'p95':>8}{'max':>8}"]
         for name, values in self.stages.items():
             lines.append(_row(name, values))
         if self.end_to_end_ms:
-            lines.append(_row("frame → tecla", self.end_to_end_ms))
+            lines.append(_row("frame → key", self.end_to_end_ms))
         else:
-            lines.append("frame → tecla: sin teclas enviadas")
-        lines.append(f"FPS del bucle: {self.fps():.1f}")
+            lines.append("frame → key: no keys sent")
+        lines.append(f"Loop FPS: {self.fps():.1f}")
         return "\n".join(lines)
 
 

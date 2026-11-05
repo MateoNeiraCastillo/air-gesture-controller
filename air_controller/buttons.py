@@ -1,12 +1,12 @@
-"""Los botones del mando invisible."""
+"""The buttons of the invisible controller."""
 
 from enum import Enum
 
 
 class Button(Enum):
-    """Botones que el controlador sabe detectar.
+    """Buttons the controller knows how to detect.
 
-    El valor es el nombre que se usa en config.toml.
+    The value is the name used in config.toml.
     """
 
     LEFT = "left"

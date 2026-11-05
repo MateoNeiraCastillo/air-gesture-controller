@@ -60,7 +60,7 @@ def test_full_dpad_push(classifier: Classifier, target, button: Button) -> None:
 
 
 def test_weaker_push_than_calibration_still_counts(classifier: Classifier) -> None:
-    """El caso del combo de día: empujar al 70 % de lo calibrado sigue siendo 'derecha'."""
+    """The daytime combo case: pushing at 70 % of the calibrated travel is still 'right'."""
     reading = classifier.classify(make_hand(*between(REST, DPAD_RIGHT, 0.7)), make_hand(*REST))
     assert reading.pressed == {Button.RIGHT}
     assert reading.dpad_right_progress == pytest.approx(0.7, abs=0.1)

@@ -1,9 +1,9 @@
-"""Configuración del controlador, leída de un archivo TOML.
+"""Controller configuration, read from a TOML file.
 
-Todos los umbrales, tiempos y teclas viven en config.toml, no en el código.
-Al cargar se valida todo: un valor fuera de rango o una sección mal escrita
-falla al arrancar, con un mensaje claro, en vez de comportarse raro en mitad
-de una partida.
+All thresholds, timings and keys live in config.toml, not in the code.
+Everything is validated on load: an out-of-range value or a misspelled section
+fails at startup with a clear message, instead of misbehaving in the middle
+of a game.
 """
 
 import tomllib
@@ -17,32 +17,32 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.toml"
 
 
 class ConfigError(ValueError):
-    """Error en config.toml."""
+    """Error in config.toml."""
 
 
 @dataclass(frozen=True)
 class CalibrationConfig:
-    frames_per_pose: int        # frames válidos por postura (~3 s a 30 fps)
-    min_separation: float       # separación mínima entre posturas, en desviaciones típicas
+    frames_per_pose: int        # valid frames per pose (~3 s at 30 fps)
+    min_separation: float       # minimum separation between poses, in standard deviations
 
 
 @dataclass(frozen=True)
 class ClassifierConfig:
-    dpad_threshold: float       # fracción del recorrido calibrado que cuenta como pulsado
+    dpad_threshold: float       # fraction of the calibrated travel that counts as pressed
 
 
 @dataclass(frozen=True)
 class PostureConfig:
-    hand_size_ratio_min: float  # tamaño de mano / tamaño calibrado por debajo → aviso
-    hand_size_ratio_max: float  # por encima → aviso
-    warning_after_ms: float     # tiempo fuera de rango antes de avisar (evita avisos por ruido)
+    hand_size_ratio_min: float  # hand size / calibrated size below this → warning
+    hand_size_ratio_max: float  # above this → warning
+    warning_after_ms: float     # time out of range before warning (avoids warnings from noise)
 
 
 @dataclass(frozen=True)
 class TimingConfig:
-    press_confirm_ms: float     # tiempo pulsado antes de enviar la pulsación
-    release_confirm_ms: float   # tiempo soltado antes de enviar la liberación
-    missing_hand_ms: float      # tiempo sin ver una mano antes de soltar sus botones
+    press_confirm_ms: float     # time pressed before sending the press
+    release_confirm_ms: float   # time released before sending the release
+    missing_hand_ms: float      # time without seeing a hand before releasing its buttons
 
 
 @dataclass(frozen=True)
@@ -55,20 +55,20 @@ class Config:
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
-    """Lee y valida config.toml. Lanza ConfigError si algo no cuadra."""
+    """Reads and validates config.toml. Raises ConfigError if anything is wrong."""
     try:
         with path.open("rb") as file:
             raw = tomllib.load(file)
     except FileNotFoundError as error:
-        raise ConfigError(f"No existe el archivo de configuración: {path}") from error
+        raise ConfigError(f"Configuration file does not exist: {path}") from error
     except tomllib.TOMLDecodeError as error:
-        raise ConfigError(f"{path.name} no es TOML válido: {error}") from error
+        raise ConfigError(f"{path.name} is not valid TOML: {error}") from error
     return parse_config(raw)
 
 
 def parse_config(raw: dict[str, Any]) -> Config:
-    """Convierte el diccionario del TOML en Config, validando cada valor."""
-    _check_keys(raw, {"calibration", "classifier", "posture", "timing", "keys"}, "raíz")
+    """Converts the TOML dictionary into a Config, validating every value."""
+    _check_keys(raw, {"calibration", "classifier", "posture", "timing", "keys"}, "root")
     config = Config(
         calibration=_parse_calibration(_section(raw, "calibration")),
         classifier=_parse_classifier(_section(raw, "classifier")),
@@ -80,7 +80,7 @@ def parse_config(raw: dict[str, Any]) -> Config:
 
 
 # --------------------------------------------------------------------------- #
-# Secciones
+# Sections
 # --------------------------------------------------------------------------- #
 
 def _parse_calibration(section: dict[str, Any]) -> CalibrationConfig:
@@ -120,53 +120,53 @@ def _parse_keys(section: dict[str, Any]) -> dict[Button, str]:
     _check_keys(section, expected, "keys")
     missing = expected - set(section)
     if missing:
-        raise ConfigError(f"[keys]: falta la tecla de {', '.join(sorted(missing))}")
+        raise ConfigError(f"[keys]: missing key for {', '.join(sorted(missing))}")
     keys: dict[Button, str] = {}
     for button in Button:
         key = section[button.value]
         if not isinstance(key, str) or not key.strip():
-            raise ConfigError(f"[keys] {button.value}: debe ser un texto no vacío")
+            raise ConfigError(f"[keys] {button.value}: must be a non-empty string")
         keys[button] = key.strip().lower()
     repeated = {key for key in keys.values() if list(keys.values()).count(key) > 1}
     if repeated:
-        raise ConfigError(f"[keys]: la misma tecla para varios botones: {', '.join(sorted(repeated))}")
+        raise ConfigError(f"[keys]: the same key for several buttons: {', '.join(sorted(repeated))}")
     return keys
 
 
 # --------------------------------------------------------------------------- #
-# Utilidades de validación
+# Validation helpers
 # --------------------------------------------------------------------------- #
 
 def _section(raw: dict[str, Any], name: str) -> dict[str, Any]:
     if name not in raw:
-        raise ConfigError(f"Falta la sección [{name}]")
+        raise ConfigError(f"Missing section [{name}]")
     section = raw[name]
     if not isinstance(section, dict):
-        raise ConfigError(f"[{name}] debe ser una sección, no un valor suelto")
+        raise ConfigError(f"[{name}] must be a section, not a bare value")
     return section
 
 
 def _check_keys(section: dict[str, Any], allowed: set[str], where: str) -> None:
-    """Un nombre mal escrito (p. ej. 'press_confim_ms') debe fallar, no ignorarse."""
+    """A misspelled name (e.g. 'press_confim_ms') must fail, not be ignored."""
     unknown = set(section) - allowed
     if unknown:
-        raise ConfigError(f"[{where}]: claves desconocidas: {', '.join(sorted(unknown))}")
+        raise ConfigError(f"[{where}]: unknown keys: {', '.join(sorted(unknown))}")
 
 
 def _number_in_range(section: dict[str, Any], key: str, where: str,
                      low: float, high: float) -> float:
     if key not in section:
-        raise ConfigError(f"[{where}]: falta '{key}'")
+        raise ConfigError(f"[{where}]: missing '{key}'")
     value = section[key]
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ConfigError(f"[{where}] {key}: debe ser un número")
+        raise ConfigError(f"[{where}] {key}: must be a number")
     if not low <= value <= high:
-        raise ConfigError(f"[{where}] {key} = {value}: debe estar entre {low} y {high}")
+        raise ConfigError(f"[{where}] {key} = {value}: must be between {low} and {high}")
     return float(value)
 
 
 def _int_in_range(section: dict[str, Any], key: str, where: str, low: int, high: int) -> int:
     value = _number_in_range(section, key, where, low, high)
     if not float(value).is_integer() or isinstance(section[key], float):
-        raise ConfigError(f"[{where}] {key}: debe ser un número entero")
+        raise ConfigError(f"[{where}] {key}: must be an integer")
     return int(value)

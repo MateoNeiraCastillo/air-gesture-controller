@@ -33,11 +33,11 @@ def test_valid_config_is_parsed() -> None:
 
 
 @pytest.mark.parametrize("section,key,value", [
-    ("timing", "press_confirm_ms", -5),          # fuera de rango
-    ("timing", "press_confirm_ms", "80"),        # texto en vez de número
-    ("timing", "press_confirm_ms", True),        # bool no es un número válido
-    ("calibration", "frames_per_pose", 90.5),    # debe ser entero
-    ("classifier", "dpad_threshold", 1.5),       # fracción imposible
+    ("timing", "press_confirm_ms", -5),          # out of range
+    ("timing", "press_confirm_ms", "80"),        # string instead of number
+    ("timing", "press_confirm_ms", True),        # bool is not a valid number
+    ("calibration", "frames_per_pose", 90.5),    # must be an integer
+    ("classifier", "dpad_threshold", 1.5),       # impossible fraction
 ])
 def test_invalid_values_are_rejected(section: str, key: str, value) -> None:
     with pytest.raises(ConfigError):
@@ -66,10 +66,10 @@ def test_missing_button_key_is_rejected() -> None:
 
 
 def test_same_key_for_two_buttons_is_rejected() -> None:
-    with pytest.raises(ConfigError, match="misma tecla"):
+    with pytest.raises(ConfigError, match="same key"):
         parse_config(with_change("keys", "a", "left"))
 
 
 def test_missing_file_gives_clear_error(tmp_path) -> None:
-    with pytest.raises(ConfigError, match="No existe"):
-        load_config(tmp_path / "no_existe.toml")
+    with pytest.raises(ConfigError, match="does not exist"):
+        load_config(tmp_path / "does_not_exist.toml")

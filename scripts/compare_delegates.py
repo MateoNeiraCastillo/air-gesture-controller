@@ -1,17 +1,17 @@
-"""Paso 3 (latencia): CPU vs GPU sobre los MISMOS vídeos, en tu Mac.
+"""Step 3 (latency): CPU vs GPU on the SAME videos, on your Mac.
 
-En el spike la GPU perdía la mano izquierda y ponía las dos detecciones sobre
-la derecha. Este script lo comprueba en tu máquina y mide el coste real de cada
-opción, para decidir con datos.
+In the spike the GPU lost the left hand and put both detections on the right
+one. This script checks it on your machine and measures the real cost of each
+option, to decide based on data.
 
-Mide por vídeo y delegate:
-  - % de frames con dos manos distintas
-  - % de frames con detecciones duplicadas (dos "manos" sobre la misma mano)
-  - inferencia p50 / p95
+Measures per video and delegate:
+  - % of frames with two distinct hands
+  - % of frames with duplicated detections (two "hands" on the same hand)
+  - inference p50 / p95
 
-Uso:
-    python scripts/compare_delegates.py                  # todos los vídeos de data/raw
-    python scripts/compare_delegates.py reposo dpad_der  # solo esas etiquetas
+Usage:
+    python scripts/compare_delegates.py                    # all videos in data/raw
+    python scripts/compare_delegates.py rest dpad_right    # only those labels
 """
 
 import argparse
@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = ROOT / "data" / "raw"
 MODEL_PATH = ROOT / "models" / "hand_landmarker.task"
 WRIST = 0
-DUPLICATE_MAX_DISTANCE = 0.12  # muñecas a menos del 12 % del ancho = la misma mano
+DUPLICATE_MAX_DISTANCE = 0.12  # wrists closer than 12 % of the width = the same hand
 SETTLE_FRAMES = 30
 
 
@@ -107,24 +107,24 @@ def run(video: Path, use_gpu: bool) -> DelegateResult:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compara CPU y GPU sobre los vídeos del spike.")
-    parser.add_argument("labels", nargs="*", help="etiquetas a probar (por defecto, todas)")
+    parser = argparse.ArgumentParser(description="Compares CPU and GPU on the spike videos.")
+    parser.add_argument("labels", nargs="*", help="labels to test (default: all)")
     args = parser.parse_args()
 
     videos = sorted(RAW_DIR.glob("*.mp4"))
     if args.labels:
         videos = [v for v in videos if v.stem.rsplit("_", 2)[0] in args.labels]
     if not videos:
-        print(f"No hay vídeos que coincidan en {RAW_DIR}")
+        print(f"No matching videos in {RAW_DIR}")
         return
 
-    print(f"{'vídeo':<32}{'delegate':<10}{'2 manos':>9}{'duplic.':>9}{'p50':>9}{'p95':>9}")
+    print(f"{'video':<32}{'delegate':<10}{'2 hands':>9}{'dupl.':>9}{'p50':>9}{'p95':>9}")
     for video in videos:
         for use_gpu in (False, True):
             try:
                 r = run(video, use_gpu)
             except (RuntimeError, ValueError) as error:
-                print(f"{video.stem:<32}{'GPU' if use_gpu else 'CPU':<10} no disponible: {error}")
+                print(f"{video.stem:<32}{'GPU' if use_gpu else 'CPU':<10} not available: {error}")
                 continue
             print(f"{video.stem:<32}{'GPU' if use_gpu else 'CPU':<10}"
                   f"{r.two_distinct:>8.1f}%{r.duplicated:>8.1f}%{r.p50_ms:>7.1f}ms{r.p95_ms:>7.1f}ms")

@@ -1,16 +1,16 @@
-"""Capa 5: convertir eventos de botón en teclas pulsadas y soltadas.
+"""Layer 5: turn button events into key presses and releases.
 
-Regla de oro: NUNCA dejar una tecla pegada. Una tecla pegada en un juego es
-peor que una pulsación perdida (Mario corre solo hacia un precipicio). Por eso:
-- Cada emisor recuerda qué teclas tiene pulsadas y `release_all()` las suelta.
-- `KeyOutput` es un context manager: al salir del `with` (normal, por
-  excepción o con Ctrl+C) suelta todo.
-- Además, la máquina de estados suelta los botones de una mano que deja de
-  verse > `missing_hand_ms`: apartar las manos de la cámara es un "freno de
-  emergencia" natural.
+Golden rule: NEVER leave a key stuck. A stuck key in a game is worse than a
+missed press (Mario runs off a cliff on his own). Therefore:
+- Each sender remembers which keys it has pressed and `release_all()` releases them.
+- `KeyOutput` is a context manager: on leaving the `with` (normally, through
+  an exception or with Ctrl+C) it releases everything.
+- In addition, the state machine releases the buttons of a hand that has not
+  been seen for > `missing_hand_ms`: moving your hands away from the camera is
+  a natural "emergency brake".
 
-El emisor real usa pynput, que se importa solo al crearlo: los tests usan
-`RecordingKeySender` y no necesitan pynput ni permisos del sistema.
+The real sender uses pynput, which is only imported when it is created: the
+tests use `RecordingKeySender` and need neither pynput nor system permissions.
 """
 
 from dataclasses import dataclass, field
@@ -29,21 +29,21 @@ class KeySender(Protocol):
 
 
 def validate_key_name(key: str) -> None:
-    """Acepta teclas especiales (left, space...) o un solo carácter (z, x...)."""
+    """Accepts special keys (left, space...) or a single character (z, x...)."""
     if key not in SPECIAL_KEYS and len(key) != 1:
-        raise ValueError(f"Tecla desconocida: '{key}'. Usa una de {sorted(SPECIAL_KEYS)} "
-                         "o un solo carácter.")
+        raise ValueError(f"Unknown key: '{key}'. Use one of {sorted(SPECIAL_KEYS)} "
+                         "or a single character.")
 
 
 class PynputKeySender:
-    """Envía teclas reales al sistema.
+    """Sends real keys to the system.
 
-    En macOS hace falta dar permiso de Accesibilidad a la app desde la que se
-    ejecuta (Terminal o VS Code); sin él, las teclas se ignoran sin error.
+    On macOS the app it runs from (Terminal or VS Code) needs the Accessibility
+    permission; without it, keys are silently ignored.
     """
 
     def __init__(self) -> None:
-        from pynput.keyboard import Controller, Key, KeyCode  # import perezoso
+        from pynput.keyboard import Controller, Key, KeyCode  # lazy import
 
         self._controller = Controller()
         self._special = {name: getattr(Key, name) for name in SPECIAL_KEYS}
@@ -61,24 +61,24 @@ class PynputKeySender:
 
 @dataclass
 class RecordingKeySender:
-    """Emisor falso para tests y para --dry-run: apunta lo que se habría enviado."""
+    """Fake sender for tests and --dry-run: records what would have been sent."""
 
-    log: list[tuple[str, str]] = field(default_factory=list)   # (accion, tecla)
+    log: list[tuple[str, str]] = field(default_factory=list)   # (action, key)
     echo: bool = False
 
     def press(self, key: str) -> None:
         self.log.append(("press", key))
         if self.echo:
-            print(f"  [tecla] ↓ {key}")
+            print(f"  [key] ↓ {key}")
 
     def release(self, key: str) -> None:
         self.log.append(("release", key))
         if self.echo:
-            print(f"  [tecla] ↑ {key}")
+            print(f"  [key] ↑ {key}")
 
 
 class KeyOutput:
-    """Traduce ButtonEvent → teclas, recordando lo pulsado para poder soltarlo todo."""
+    """Translates ButtonEvent → keys, remembering what is pressed so everything can be released."""
 
     def __init__(self, sender: KeySender, keys: dict[Button, str]) -> None:
         for key in keys.values():

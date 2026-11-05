@@ -1,14 +1,14 @@
-"""Sesión guiada: el guion de acciones y cómo puntuar lo que hizo el mando.
+"""Guided session: the script of actions and how to score what the controller did.
 
-El guion se repite en bloques iguales para poder comparar el principio con el
-final de la sesión (¿se desvía la postura con el tiempo?).
+The script repeats in identical blocks so the start of the session can be
+compared with the end (does the posture drift over time?).
 
-Puntuación:
-- Pasos "mantener": acierto frame a frame del estado CONFIRMADO de cada botón
-  (lo que recibiría el juego) frente a lo pedido, ignorando los primeros
-  `grace_ms` del paso (tiempo de reacción del jugador).
-- Pasos con toques de A: se cuentan las pulsaciones confirmadas de A dentro
-  del paso (desplazado por el margen de reacción) frente a las pedidas.
+Scoring:
+- "Hold" steps: frame-by-frame agreement of each button's CONFIRMED state
+  (what the game would receive) against what was asked, ignoring the first
+  `grace_ms` of the step (the player's reaction time).
+- Steps with A taps: the confirmed A presses inside the step (shifted by the
+  reaction margin) are counted against the requested ones.
 """
 
 from dataclasses import dataclass
@@ -24,8 +24,8 @@ GRACE_MS = 700
 class Step:
     text: str
     duration_ms: int
-    hold: frozenset[Button] = frozenset()   # botones que deben estar mantenidos
-    a_taps: int = 0                          # toques de A pedidos (0 = A según `hold`)
+    hold: frozenset[Button] = frozenset()   # buttons that must be held
+    a_taps: int = 0                          # requested A taps (0 = A follows `hold`)
 
 
 def _step(text: str, seconds: float, *hold: Button, a_taps: int = 0) -> Step:
@@ -33,25 +33,25 @@ def _step(text: str, seconds: float, *hold: Button, a_taps: int = 0) -> Step:
 
 
 BLOCK = (
-    _step("Reposo", 4),
-    _step("Manten DERECHA", 4, Button.RIGHT),
-    _step("Reposo", 3),
-    _step("Manten IZQUIERDA", 4, Button.LEFT),
-    _step("Reposo", 3),
-    _step("Manten A", 3, Button.A),
-    _step("Reposo", 3),
-    _step("Pulsa A 3 veces", 4, a_taps=3),
-    _step("Reposo", 2),
-    _step("Manten DERECHA y pulsa A 3 veces", 5, Button.RIGHT, a_taps=3),
-    _step("Reposo", 3),
-    _step("Manten IZQUIERDA y pulsa A 2 veces", 5, Button.LEFT, a_taps=2),
-    _step("Reposo", 2),
-    _step("Manten DERECHA y manten A", 4, Button.RIGHT, Button.A),
+    _step("Rest", 4),
+    _step("Hold RIGHT", 4, Button.RIGHT),
+    _step("Rest", 3),
+    _step("Hold LEFT", 4, Button.LEFT),
+    _step("Rest", 3),
+    _step("Hold A", 3, Button.A),
+    _step("Rest", 3),
+    _step("Press A 3 times", 4, a_taps=3),
+    _step("Rest", 2),
+    _step("Hold RIGHT and press A 3 times", 5, Button.RIGHT, a_taps=3),
+    _step("Rest", 3),
+    _step("Hold LEFT and press A 2 times", 5, Button.LEFT, a_taps=2),
+    _step("Rest", 2),
+    _step("Hold RIGHT and hold A", 4, Button.RIGHT, Button.A),
 )
 
 
 def build_script(blocks: int = 3) -> list[tuple[int, Step]]:
-    """Lista de (número de bloque, paso)."""
+    """List of (block number, step)."""
     return [(block, step) for block in range(1, blocks + 1) for step in BLOCK]
 
 
@@ -71,16 +71,16 @@ class StepScore:
     block: int
     step: Step
     frames_scored: int
-    agreement: dict[Button, float]     # % frames con estado correcto (NaN si no se evalúa)
-    a_presses: int                     # pulsaciones de A confirmadas en el paso
+    agreement: dict[Button, float]     # % of frames with the correct state (NaN if not scored)
+    a_presses: int                     # confirmed A presses during the step
 
 
 def score_step(block: int, step: Step, start_ms: int, timestamps: np.ndarray,
                held_masks: np.ndarray, press_times_a: np.ndarray) -> StepScore:
-    """Puntúa un paso a partir de los frames de la sesión.
+    """Scores a step from the session's frames.
 
-    `held_masks`: estado confirmado por frame (máscara de bits).
-    `press_times_a`: instantes (ms) de las pulsaciones confirmadas de A.
+    `held_masks`: confirmed state per frame (bit mask).
+    `press_times_a`: times (ms) of the confirmed A presses.
     """
     end_ms = start_ms + step.duration_ms
     in_window = (timestamps >= start_ms + GRACE_MS) & (timestamps < end_ms)
@@ -88,7 +88,7 @@ def score_step(block: int, step: Step, start_ms: int, timestamps: np.ndarray,
     agreement: dict[Button, float] = {}
     for button, bit in BUTTON_BITS.items():
         if button is Button.A and step.a_taps:
-            agreement[button] = float("nan")       # los toques se puntúan contando
+            agreement[button] = float("nan")       # taps are scored by counting
             continue
         expected = button in step.hold
         actual = (masks & bit) > 0

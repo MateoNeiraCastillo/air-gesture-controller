@@ -1,4 +1,4 @@
-"""¿Separa un umbral simple dos distribuciones? Métrica central del spike."""
+"""Does a simple threshold separate two distributions? The spike's core metric."""
 
 from dataclasses import dataclass
 
@@ -11,15 +11,15 @@ MAX_CANDIDATES = 500
 class ThresholdResult:
     threshold: float
     balanced_accuracy: float
-    positive_above: bool  # True: valores > umbral se clasifican como la clase "positive"
+    positive_above: bool  # True: values > threshold are classified as the "positive" class
 
 
 def best_threshold(negative: np.ndarray, positive: np.ndarray) -> ThresholdResult:
-    """Umbral que mejor separa `negative` de `positive`, por accuracy balanceada.
+    """Threshold that best separates `negative` from `positive`, by balanced accuracy.
 
-    La accuracy balanceada es la media del acierto en cada clase, así que no
-    favorece a la clase con más frames. 0.5 = azar, 1.0 = separación perfecta.
-    Los NaN (mano no detectada) se descartan.
+    Balanced accuracy is the mean of the per-class accuracy, so it doesn't
+    favour the class with more frames. 0.5 = chance, 1.0 = perfect separation.
+    NaNs (hand not detected) are discarded.
     """
     negative = negative[~np.isnan(negative)]
     positive = positive[~np.isnan(positive)]
@@ -35,7 +35,7 @@ def best_threshold(negative: np.ndarray, positive: np.ndarray) -> ThresholdResul
         positive_hit = np.mean(positive > threshold)
         negative_hit = np.mean(negative <= threshold)
         above = (positive_hit + negative_hit) / 2
-        below = 1 - above  # misma regla con el sentido invertido
+        below = 1 - above  # same rule with the direction flipped
         for accuracy, positive_above in ((above, True), (below, False)):
             if accuracy > best.balanced_accuracy:
                 best = ThresholdResult(float(threshold), float(accuracy), positive_above)

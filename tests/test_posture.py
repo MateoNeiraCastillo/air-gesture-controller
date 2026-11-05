@@ -39,11 +39,11 @@ def test_same_posture_gives_no_warning(monitor_factory) -> None:
 
 def test_rotated_hand_warns_only_after_delay(monitor_factory) -> None:
     monitor = monitor_factory()
-    rotated = make_hand((60, -40), size=30)          # el caso del ritmo de día
+    rotated = make_hand((60, -40), size=30)          # the daytime rhythm case
     assert monitor.update(make_hand((60, -40)), rotated, 0) == []
     assert monitor.update(make_hand((60, -40)), rotated, 400) == []
     warnings = monitor.update(make_hand((60, -40)), rotated, 520)
-    assert len(warnings) == 1 and "derecha" in warnings[0] and "girado" in warnings[0]
+    assert len(warnings) == 1 and "Right" in warnings[0] and "rotated" in warnings[0]
 
 
 def test_brief_glitch_does_not_warn(monitor_factory) -> None:
@@ -58,7 +58,7 @@ def test_hand_too_close_warns(monitor_factory) -> None:
     big = make_hand((60, -40), size=200)
     monitor.update(big, make_hand((60, -40)), 0)
     warnings = monitor.update(big, make_hand((60, -40)), 600)
-    assert len(warnings) == 1 and "izquierda" in warnings[0] and "cerca" in warnings[0]
+    assert len(warnings) == 1 and "Left" in warnings[0] and "close" in warnings[0]
 
 
 def test_missing_hand_is_not_a_posture_warning(monitor_factory) -> None:

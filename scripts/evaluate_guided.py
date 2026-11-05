@@ -1,8 +1,8 @@
-"""Analiza una sesión guiada: ¿hizo el mando lo que se pidió?
+"""Analyses a guided session: did the controller do what was asked?
 
-Uso:
-    python scripts/evaluate_guided.py                  # la sesión más reciente
-    python scripts/evaluate_guided.py data/guided/sesion_XXXX.npz
+Usage:
+    python scripts/evaluate_guided.py                  # the most recent session
+    python scripts/evaluate_guided.py data/guided/session_XXXX.npz
 """
 
 import argparse
@@ -19,7 +19,7 @@ TARGET = 95.0
 
 
 def latest_session() -> Path | None:
-    sessions = sorted(GUIDED_DIR.glob("sesion_*.npz"))
+    sessions = sorted(GUIDED_DIR.glob("session_*.npz"))
     return sessions[-1] if sessions else None
 
 
@@ -43,68 +43,68 @@ def report(path: Path) -> None:
         data = {key: data[key] for key in data.files}
     scores = scores_for(data)
     if not scores:
-        print("La sesión no tiene pasos registrados.")
+        print("The session has no recorded steps.")
         return
-    print(f"Sesión: {path.name}  ({'completa' if data['completed'] else 'interrumpida'}, "
+    print(f"Session: {path.name}  ({'complete' if data['completed'] else 'interrupted'}, "
           f"{len(data['timestamp_ms'])} frames)")
 
-    # 1. Acierto por botón en pasos de mantener (estado confirmado vs pedido)
-    print("\n== Estado de los botones (lo que recibe el juego) vs lo pedido ==")
+    # 1. Accuracy per button in hold steps (confirmed state vs requested)
+    print("\n== Button state (what the game receives) vs what was asked ==")
     overall: dict[Button, float] = {}
     for button in BUTTON_BITS:
         overall[button] = mean([s.agreement[button] for s in scores])
-        print(f"  {button.value:<6} {overall[button]:6.1f} % de los frames correctos")
+        print(f"  {button.value:<6} {overall[button]:6.1f} % of frames correct")
 
-    # 2. Peores pasos: dónde falla
-    print("\n== Pasos con algún botón por debajo del 90 % (los 12 peores) ==")
+    # 2. Worst steps: where it fails
+    print("\n== Steps with any button below 90 % (the 12 worst) ==")
     bad = sorted(((s, b, v) for s in scores for b, v in s.agreement.items()
                   if not np.isnan(v) and v < 90), key=lambda item: item[2])
     if not bad:
-        print("  Ninguno.")
+        print("  None.")
     if len(bad) > 12:
-        print(f"  ({len(bad)} en total)")
+        print(f"  ({len(bad)} in total)")
     for s, button, value in bad[:12]:
-        print(f"  bloque {s.block}  {s.step.text:<38} {button.value:<6} {value:5.1f} %")
+        print(f"  block {s.block}  {s.step.text:<38} {button.value:<6} {value:5.1f} %")
 
-    # 3. Toques de A
-    print("\n== Toques de A (pedidos → confirmados) ==")
+    # 3. A taps
+    print("\n== A taps (requested → confirmed) ==")
     tap_steps = [s for s in scores if s.step.a_taps]
     exact = sum(s.a_presses == s.step.a_taps for s in tap_steps)
     for s in tap_steps:
         mark = "OK" if s.a_presses == s.step.a_taps else "  "
-        print(f"  {mark} bloque {s.block}  {s.step.text:<38} {s.step.a_taps} → {s.a_presses}")
+        print(f"  {mark} block {s.block}  {s.step.text:<38} {s.step.a_taps} → {s.a_presses}")
     tap_rate = 100 * exact / len(tap_steps) if tap_steps else float("nan")
 
-    # 4. Deriva: ¿empeora con el tiempo?
-    print("\n== Deriva entre bloques ==")
+    # 4. Drift: does it get worse over time?
+    print("\n== Drift between blocks ==")
     steps = data["step"]
     blocks = np.array([scores[i].block if i < len(scores) else 0 for i in steps])
     for block in sorted(set(s.block for s in scores)):
         block_scores = [s for s in scores if s.block == block]
         agreement = mean([v for s in block_scores for v in s.agreement.values()])
-        rest_frames = np.array([scores[i].step.text == "Reposo" for i in steps]) & (blocks == block)
+        rest_frames = np.array([scores[i].step.text == "Rest" for i in steps]) & (blocks == block)
         drift = np.nanmedian(np.maximum(data["dpad_left_progress"][rest_frames],
                                         data["dpad_right_progress"][rest_frames])) if rest_frames.any() else np.nan
         warned = 100 * np.mean(data["posture_warning"][blocks == block])
-        print(f"  bloque {block}: acierto {agreement:5.1f} % | pulgar izq. en reposo: "
-              f"{drift:+.0%} del recorrido de la cruceta | avisos de postura {warned:4.1f} %")
+        print(f"  block {block}: accuracy {agreement:5.1f} % | left thumb at rest: "
+              f"{drift:+.0%} of the D-pad travel | posture warnings {warned:4.1f} %")
 
-    # 5. Veredicto
+    # 5. Verdict
     worst = min(v for v in overall.values() if not np.isnan(v))
-    print("\n================ VEREDICTO ================")
-    print(f"{'OK ' if worst >= TARGET else 'NO '} peor botón              {worst:5.1f} %  (>= {TARGET:.0f} %)")
-    print(f"{'OK ' if tap_rate >= 80 else 'NO '} toques de A exactos      {tap_rate:5.1f} %  (>= 80 %)")
-    print(f"     avisos de postura        {100 * np.mean(data['posture_warning']):5.1f} % del tiempo")
-    print(f"     confirmación de pulsación {float(data['press_confirm_ms']):.0f} ms")
+    print("\n================ VERDICT ================")
+    print(f"{'OK ' if worst >= TARGET else 'NO '} worst button             {worst:5.1f} %  (>= {TARGET:.0f} %)")
+    print(f"{'OK ' if tap_rate >= 80 else 'NO '} exact A taps             {tap_rate:5.1f} %  (>= 80 %)")
+    print(f"     posture warnings         {100 * np.mean(data['posture_warning']):5.1f} % of the time")
+    print(f"     press confirmation       {float(data['press_confirm_ms']):.0f} ms")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Analiza una sesión guiada.")
-    parser.add_argument("path", nargs="?", type=Path, help="archivo .npz (por defecto el último)")
+    parser = argparse.ArgumentParser(description="Analyses a guided session.")
+    parser.add_argument("path", nargs="?", type=Path, help=".npz file (default: the latest)")
     args = parser.parse_args()
     path = args.path or latest_session()
     if path is None or not path.exists():
-        print(f"No hay sesiones en {GUIDED_DIR}. Graba una con scripts/guided_session.py")
+        print(f"No sessions in {GUIDED_DIR}. Record one with scripts/guided_session.py")
         return
     report(path)
 

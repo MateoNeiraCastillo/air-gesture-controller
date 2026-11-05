@@ -1,8 +1,8 @@
-"""Features geométricas del pulgar, calculadas sobre landmarks en píxeles.
+"""Geometric thumb features, computed on landmarks in pixels.
 
-Las coordenadas deben venir en píxeles (x*ancho, y*alto), no normalizadas:
-MediaPipe normaliza x e y por separado, así que en una imagen 640x480 los
-ángulos calculados sobre coordenadas normalizadas salen deformados.
+Coordinates must be in pixels (x*width, y*height), not normalized: MediaPipe
+normalizes x and y separately, so in a 640x480 image the angles computed on
+normalized coordinates come out distorted.
 """
 
 import numpy as np
@@ -17,7 +17,7 @@ MIDDLE_MCP = 9
 
 
 def joint_angle_deg(a: np.ndarray, joint: np.ndarray, b: np.ndarray) -> float:
-    """Ángulo en `joint` formado por los segmentos joint→a y joint→b, en grados."""
+    """Angle at `joint` formed by the segments joint→a and joint→b, in degrees."""
     u = a - joint
     v = b - joint
     norm_product = np.linalg.norm(u) * np.linalg.norm(v)
@@ -28,26 +28,26 @@ def joint_angle_deg(a: np.ndarray, joint: np.ndarray, b: np.ndarray) -> float:
 
 
 def thumb_ip_angle(hand: np.ndarray) -> float:
-    """Flexión en la articulación IP del pulgar (landmarks 2-3-4). 180° = recto."""
+    """Flexion at the thumb IP joint (landmarks 2-3-4). 180° = straight."""
     return joint_angle_deg(hand[THUMB_MCP], hand[THUMB_IP], hand[THUMB_TIP])
 
 
 def thumb_mcp_angle(hand: np.ndarray) -> float:
-    """Flexión en la articulación MCP del pulgar (landmarks 1-2-3). Plan B si la IP no separa."""
+    """Flexion at the thumb MCP joint (landmarks 1-2-3). Plan B if the IP doesn't separate."""
     return joint_angle_deg(hand[THUMB_CMC], hand[THUMB_MCP], hand[THUMB_IP])
 
 
 def hand_size(hand: np.ndarray) -> float:
-    """Distancia muñeca → base del dedo medio: escala de referencia de la mano."""
+    """Distance wrist → base of the middle finger: the hand's reference scale."""
     return float(np.linalg.norm(hand[MIDDLE_MCP, :2] - hand[WRIST, :2]))
 
 
 def thumb_position_features(hand: np.ndarray) -> np.ndarray:
-    """Posición de la punta del pulgar en "tamaños de mano", invariante a la distancia.
+    """Thumb tip position in "hand sizes", invariant to distance.
 
-    Devuelve (dx, dy) respecto a la base del índice y (dx, dy) respecto a la muñeca.
-    Es la feature que funcionó en el spike: los ángulos fallan cuando el pulgar
-    se dobla sobre el puño, la posición no.
+    Returns (dx, dy) relative to the index finger base and (dx, dy) relative to the wrist.
+    This is the feature that worked in the spike: angles fail when the thumb
+    bends over the fist, position doesn't.
     """
     size = hand_size(hand)
     if size == 0 or np.isnan(hand).any():
@@ -59,8 +59,8 @@ def thumb_position_features(hand: np.ndarray) -> np.ndarray:
 
 
 def thumb_offset(hand: np.ndarray) -> np.ndarray:
-    """Posición de la punta del pulgar respecto a la base del índice,
-    en "tamaños de mano" (invariante a la distancia a la cámara). Devuelve (dx, dy)."""
+    """Thumb tip position relative to the index finger base,
+    in "hand sizes" (invariant to distance from the camera). Returns (dx, dy)."""
     size = hand_size(hand)
     if size == 0:
         return np.array([np.nan, np.nan])

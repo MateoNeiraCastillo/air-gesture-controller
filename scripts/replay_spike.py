@@ -1,19 +1,19 @@
-"""Pasa los clips del spike por calibración + clasificador, frame a frame.
+"""Runs the spike clips through calibration + classifier, frame by frame.
 
-Por cada sesión (noche, dia, ...):
-  1. Calibra con los primeros frames válidos de reposo, A mantenido,
-     cruceta izquierda y cruceta derecha (como haría el juego al arrancar).
-  2. Clasifica TODOS los clips de esa sesión, saltándose los frames usados
-     para calibrar.
-  3. Compara con lo que se pidió en cada clip.
+For each session (night, day, ...):
+  1. Calibrates with the first valid frames of rest, A held,
+     D-pad left and D-pad right (as the game would at startup).
+  2. Classifies ALL the clips of that session, skipping the frames used
+     for calibration.
+  3. Compares against what was asked for in each clip.
 
-Es la prueba del clasificador sin cámara. Los porcentajes son por frame, en
-crudo; las pulsaciones se cuentan además DESPUÉS de la máquina de estados,
-que es lo que llegaría al juego. Al final, los avisos del monitor de postura.
+This is the classifier test without a camera. The percentages are per frame,
+raw; presses are also counted AFTER the state machine, which is what would
+reach the game. At the end, the posture monitor warnings.
 
-Uso:
+Usage:
     python scripts/replay_spike.py
-    python scripts/replay_spike.py --ignore-quality   # evaluar aunque la calibración se rechace
+    python scripts/replay_spike.py --ignore-quality   # evaluate even if calibration is rejected
 """
 
 import argparse
@@ -33,21 +33,21 @@ from air_controller.state_machine import ButtonStateMachine
 
 ROOT = Path(__file__).resolve().parent.parent
 LANDMARKS_DIR = ROOT / "data" / "landmarks"
-SETTLE_FRAMES = 30   # primer segundo de cada clip: todavía colocando las manos
+SETTLE_FRAMES = 30   # first second of each clip: still positioning the hands
 FRAME_MS = 1000 / 30
 TARGET = 95.0
 
 CALIBRATION_CLIPS = {
-    Pose.REST: "reposo",
-    Pose.A_PRESSED: "boton_a_mantenido",
-    Pose.DPAD_LEFT: "dpad_izq",
-    Pose.DPAD_RIGHT: "dpad_der",
+    Pose.REST: "rest",
+    Pose.A_PRESSED: "a_held",
+    Pose.DPAD_LEFT: "dpad_left",
+    Pose.DPAD_RIGHT: "dpad_right",
 }
 
 
 @dataclass(frozen=True)
 class Clip:
-    left: np.ndarray    # (frames, 21, 3), NaN donde no se vio la mano
+    left: np.ndarray    # (frames, 21, 3), NaN where the hand wasn't seen
     right: np.ndarray
 
     def hands(self, index: int) -> tuple[np.ndarray | None, np.ndarray | None]:
@@ -60,7 +60,7 @@ class Clip:
 
 
 def load_sessions() -> dict[str, dict[str, Clip]]:
-    """sesión → etiqueta → Clip (si hay varias tomas, la última)."""
+    """session → label → Clip (if there are several takes, the last one)."""
     sessions: dict[str, dict[str, Clip]] = defaultdict(dict)
     for path in sorted(LANDMARKS_DIR.glob("*.npz")):
         label, session, _index = path.stem.rsplit("_", 2)
@@ -73,7 +73,7 @@ def load_sessions() -> dict[str, dict[str, Clip]]:
 def calibrate(clips: dict[str, Clip], frames_per_pose: int, min_separation: float,
               ignore_quality: bool = False
               ) -> tuple[Classifier | None, Calibration | None, dict[str, int]]:
-    """Devuelve el clasificador y, por clip, cuántos frames consumió la calibración."""
+    """Returns the classifier and, per clip, how many frames the calibration consumed."""
     config = load_config()
     collector = CalibrationCollector(frames_per_pose)
     used: dict[str, int] = {}
@@ -86,10 +86,10 @@ def calibrate(clips: dict[str, Clip], frames_per_pose: int, min_separation: floa
         used[label] = index
     result = collector.build(min_separation, config.classifier.dpad_threshold)
     if not result.ok:
-        print("  Calibración rechazada:", *result.problems, sep="\n    ")
+        print("  Calibration rejected:", *result.problems, sep="\n    ")
         if not ignore_quality:
             return None, None, used
-        print("  (--ignore-quality: se evalúa igualmente)")
+        print("  (--ignore-quality: evaluating anyway)")
         result = collector.build(min_separation=0.0, dpad_threshold=float("inf"))
     return Classifier(result.calibration, config.classifier), result.calibration, used
 
@@ -99,7 +99,7 @@ def readings(classifier: Classifier, clip: Clip, start: int) -> list[FrameReadin
 
 
 def share(values: list[FrameReading], condition) -> float:
-    """% de frames que cumplen `condition`, entre los frames con la mano relevante visible."""
+    """% of frames meeting `condition`, among the frames with the relevant hand visible."""
     return 100 * float(np.mean([condition(r) for r in values])) if values else float("nan")
 
 
@@ -109,10 +109,10 @@ def presses(values: list[FrameReading], button: Button) -> int:
 
 
 def confirmed(values: list[FrameReading]) -> tuple[dict[Button, int], dict[Button, float]]:
-    """Pasa las lecturas por la máquina de estados.
+    """Runs the readings through the state machine.
 
-    Devuelve, por botón, cuántas pulsaciones se enviarían al juego y qué % del
-    tiempo estaría mantenido.
+    Returns, per button, how many presses would be sent to the game and what %
+    of the time it would be held.
     """
     machine = ButtonStateMachine(load_config().timing)
     counts = {button: 0 for button in Button}
@@ -136,9 +136,9 @@ def posture_warning_share(calibration: Calibration, clip: Clip, start: int) -> f
 
 def report_session(session: str, clips: dict[str, Clip], ignore_quality: bool) -> list[float]:
     config = load_config()
-    print(f"\n== Sesión '{session}' ==")
+    print(f"\n== Session '{session}' ==")
     if any(label not in clips for label in CALIBRATION_CLIPS.values()):
-        print("  Faltan clips de calibración.")
+        print("  Calibration clips are missing.")
         return []
     classifier, calibration, used = calibrate(clips, config.calibration.frames_per_pose,
                                               config.calibration.min_separation, ignore_quality)
@@ -159,40 +159,40 @@ def report_session(session: str, clips: dict[str, Clip], ignore_quality: bool) -
     right_seen = lambda r: r.right_visible
     left_seen = lambda r: r.left_visible
 
-    rest = run("reposo")
-    line("reposo: A sin pulsar", share([r for r in rest if right_seen(r)], lambda r: Button.A not in r.pressed))
-    line("reposo: cruceta sin pulsar", share([r for r in rest if left_seen(r)],
-                                             lambda r: not ({Button.LEFT, Button.RIGHT} & r.pressed)))
-    held = run("boton_a_mantenido")
-    line("A mantenido: A pulsado", share([r for r in held if right_seen(r)], lambda r: Button.A in r.pressed))
-    for label, button in (("dpad_izq", Button.LEFT), ("dpad_der", Button.RIGHT)):
+    rest = run("rest")
+    line("rest: A not pressed", share([r for r in rest if right_seen(r)], lambda r: Button.A not in r.pressed))
+    line("rest: D-pad not pressed", share([r for r in rest if left_seen(r)],
+                                          lambda r: not ({Button.LEFT, Button.RIGHT} & r.pressed)))
+    held = run("a_held")
+    line("A held: A pressed", share([r for r in held if right_seen(r)], lambda r: Button.A in r.pressed))
+    for label, button in (("dpad_left", Button.LEFT), ("dpad_right", Button.RIGHT)):
         values = [r for r in run(label) if left_seen(r)]
-        line(f"{label}: solo {button.value} en la cruceta", share(
+        line(f"{label}: only {button.value} on the D-pad", share(
             values, lambda r, b=button: b in r.pressed and len({Button.LEFT, Button.RIGHT} & r.pressed) == 1))
 
-    for label in ("boton_a_mantenido", "boton_a_ritmo"):
+    for label in ("a_held", "a_rhythm"):
         if label in clips:
             values = [r for r in run(label) if left_seen(r)]
-            line(f"{label}: cruceta sin pulsar (solo se usa A)", share(
+            line(f"{label}: D-pad not pressed (only A is used)", share(
                 values, lambda r: not ({Button.LEFT, Button.RIGHT} & r.pressed)))
 
     if "combo" in clips:
         combo = run("combo")
-        line("combo: cruceta en 'right'", share([r for r in combo if left_seen(r)],
-                                                lambda r: Button.RIGHT in r.pressed))
+        line("combo: D-pad on 'right'", share([r for r in combo if left_seen(r)],
+                                              lambda r: Button.RIGHT in r.pressed))
 
-    print("\n  Tras la máquina de estados (lo que llegaría al juego):")
-    for label in ("boton_a_ritmo", "combo", "boton_a_mantenido"):
+    print("\n  After the state machine (what would reach the game):")
+    for label in ("a_rhythm", "combo", "a_held"):
         if label not in clips:
             continue
         values = run(label)
         counts, held_pct = confirmed(values)
         seconds = len(values) / 30
-        print(f"     {label:<18} A: {presses(values, Button.A):3d} crudo → {counts[Button.A]:3d} "
-              f"confirmadas en {seconds:.0f} s | cruceta mantenida: izq "
-              f"{held_pct[Button.LEFT]:5.1f} %, der {held_pct[Button.RIGHT]:5.1f} %")
+        print(f"     {label:<18} A: {presses(values, Button.A):3d} raw → {counts[Button.A]:3d} "
+              f"confirmed in {seconds:.0f} s | D-pad held: left "
+              f"{held_pct[Button.LEFT]:5.1f} %, right {held_pct[Button.RIGHT]:5.1f} %")
 
-    print("\n  Monitor de postura (% del tiempo con aviso):")
+    print("\n  Posture monitor (% of time with a warning):")
     for label in sorted(clips):
         print(f"     {label:<18} {posture_warning_share(calibration, clips[label], used.get(label, 0)):5.1f} %")
     return scores
@@ -201,17 +201,17 @@ def report_session(session: str, clips: dict[str, Clip], ignore_quality: bool) -
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ignore-quality", action="store_true",
-                        help="evaluar aunque la calibración no pase el control de calidad")
+                        help="evaluate even if the calibration fails quality control")
     args = parser.parse_args()
     sessions = load_sessions()
     if not sessions:
-        print(f"No hay landmarks en {LANDMARKS_DIR}.")
+        print(f"No landmarks in {LANDMARKS_DIR}.")
         return
     all_scores = [score for session, clips in sorted(sessions.items())
                   for score in report_session(session, clips, args.ignore_quality)]
     if all_scores:
-        print(f"\nPeor caso: {min(all_scores):.1f} %  (objetivo >= {TARGET:.0f} %)")
-        print("'crudo' = frame a frame; 'confirmadas' = tras la máquina de estados.")
+        print(f"\nWorst case: {min(all_scores):.1f} %  (target >= {TARGET:.0f} %)")
+        print("'raw' = frame by frame; 'confirmed' = after the state machine.")
 
 
 if __name__ == "__main__":

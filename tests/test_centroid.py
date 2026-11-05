@@ -6,15 +6,15 @@ from air_controller.centroid import UNKNOWN, CentroidClassifier
 
 def test_assigns_nearest_class() -> None:
     classifier = CentroidClassifier.fit({
-        "reposo": np.array([[0.0, 0.0], [0.1, -0.1]]),
-        "pulsado": np.array([[5.0, 5.0], [5.1, 4.9]]),
+        "rest": np.array([[0.0, 0.0], [0.1, -0.1]]),
+        "pressed": np.array([[5.0, 5.0], [5.1, 4.9]]),
     })
     predicted = classifier.predict(np.array([[0.2, 0.0], [4.8, 5.2]]))
-    assert list(predicted) == ["reposo", "pulsado"]
+    assert list(predicted) == ["rest", "pressed"]
 
 
 def test_scale_does_not_dominate() -> None:
-    # La feature 0 tiene escala enorme pero no separa; la 1 es pequeña y sí separa.
+    # Feature 0 has a huge scale but doesn't separate; feature 1 is small and does.
     classifier = CentroidClassifier.fit({
         "a": np.array([[1000.0, 0.0], [-1000.0, 0.0]]),
         "b": np.array([[1000.0, 1.0], [-1000.0, 1.0]]),

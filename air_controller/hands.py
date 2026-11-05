@@ -1,4 +1,4 @@
-"""Asignación de manos izquierda/derecha por posición en la imagen."""
+"""Left/right hand assignment by position in the image."""
 
 from dataclasses import dataclass
 from typing import Protocol, Sequence
@@ -22,11 +22,11 @@ class AssignedHands:
 
 
 def assign_hands(hands: Sequence[HandLandmarks]) -> AssignedHands:
-    """Decide qué mano es cuál por la x de la muñeca (imagen en espejo).
+    """Decides which hand is which by the wrist's x (mirrored image).
 
-    - 2 manos: la de menor x es la izquierda.
-    - 1 mano: se asigna según en qué mitad de la imagen esté.
-    - 0 o más de 2: ninguna (más de 2 = alguien más en cuadro, no fiable).
+    - 2 hands: the one with the smaller x is the left.
+    - 1 hand: assigned according to which half of the image it is in.
+    - 0 or more than 2: none (more than 2 = someone else in frame, unreliable).
     """
     if len(hands) == 2:
         first, second = sorted(hands, key=lambda hand: hand[WRIST].x)

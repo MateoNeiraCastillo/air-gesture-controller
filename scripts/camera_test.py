@@ -1,4 +1,4 @@
-"""Paso 2: abre la webcam, muestra la imagen en espejo y mide los FPS reales."""
+"""Step 2: opens the webcam, shows the mirrored image and measures the real FPS."""
 
 import time
 
@@ -14,7 +14,7 @@ def open_camera(index: int) -> cv2.VideoCapture:
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     if not camera.isOpened():
-        raise RuntimeError("No se pudo abrir la cámara. Revisa los permisos de macOS.")
+        raise RuntimeError("Could not open the camera. Check the macOS permissions.")
     return camera
 
 
@@ -26,7 +26,7 @@ def main() -> None:
         while True:
             ok, frame = camera.read()
             if not ok:
-                print("Frame perdido")
+                print("Frame dropped")
                 continue
             frame = cv2.flip(frame, 1)
             frame_count += 1
@@ -42,7 +42,7 @@ def main() -> None:
     finally:
         camera.release()
         cv2.destroyAllWindows()
-        print(f"{frame_count} frames en {elapsed:.1f} s -> {frame_count / elapsed:.1f} FPS")
+        print(f"{frame_count} frames in {elapsed:.1f} s -> {frame_count / elapsed:.1f} FPS")
 
 
 if __name__ == "__main__":

@@ -1,15 +1,15 @@
-"""Monitor de postura: avisa cuando la mano ya no está como al calibrar.
+"""Posture monitor: warns when the hand is no longer as it was during calibration.
 
-En el spike, el `ritmo` de día falló porque el puño giró de frente a la
-cámara: la escala de la mano (muñeca → base del medio) cayó de ~60 px a
-1–29 px y las medidas del pulgar se dispararon. No lo arreglamos en el
-clasificador; lo DETECTAMOS: si el tamaño aparente de una mano se sale del
-rango visto durante la calibración (ampliado por los márgenes de la config)
-durante `warning_after_ms` seguidos, se avisa para que el jugador se recoloque.
+In the spike, the daytime `rhythm` clip failed because the fist rotated to face
+the camera: the hand scale (wrist → middle finger base) dropped from ~60 px to
+1–29 px and the thumb measurements blew up. We don't fix it in the
+classifier; we DETECT it: if a hand's apparent size leaves the range seen
+during calibration (widened by the config margins) for `warning_after_ms`
+in a row, a warning tells the player to reposition.
 
-Se compara con un RANGO y no con un único tamaño porque la mano se inclina
-algo al mover el pulgar: en el spike de día, la izquierda medía del 77 % al
-130 % de su mediana según la postura, todas válidas.
+It compares against a RANGE rather than a single size because the hand tilts
+somewhat when moving the thumb: in the daytime spike, the left hand measured
+from 77 % to 130 % of its median depending on the pose, all of them valid.
 """
 
 from dataclasses import dataclass, field
@@ -20,7 +20,7 @@ from air_controller.calibration import Calibration
 from air_controller.config import PostureConfig
 from air_controller.features import hand_size
 
-HAND_NAMES = {"left": "izquierda", "right": "derecha"}
+HAND_NAMES = {"left": "Left", "right": "Right"}
 
 
 @dataclass
@@ -34,7 +34,7 @@ class PostureMonitor:
 
     def update(self, left: np.ndarray | None, right: np.ndarray | None,
                timestamp_ms: int) -> list[str]:
-        """Devuelve los avisos activos (lista vacía si todo está bien)."""
+        """Returns the active warnings (empty list if everything is fine)."""
         warnings = []
         for hand, landmarks in (("left", left), ("right", right)):
             ratio = self._ratio(hand, landmarks)
@@ -52,7 +52,7 @@ class PostureMonitor:
         return warnings
 
     def ratio(self, hand: str) -> float:
-        """Último tamaño relativo medido (1.0 = como al calibrar)."""
+        """Last measured relative size (1.0 = as during calibration)."""
         return self._last_ratio[hand]
 
     def _reference(self, hand: str) -> float:
@@ -60,10 +60,10 @@ class PostureMonitor:
                 else self.calibration.right_hand_size)
 
     def _limits(self, hand: str) -> tuple[float, float]:
-        """Tamaño mínimo y máximo aceptables, en píxeles."""
+        """Minimum and maximum acceptable size, in pixels."""
         smallest, largest = (self.calibration.left_size_range if hand == "left"
                              else self.calibration.right_size_range)
-        if largest <= 0:   # calibración sin rango: usar la mediana
+        if largest <= 0:   # calibration without a range: use the median
             smallest = largest = self._reference(hand)
         return (smallest * self.config.hand_size_ratio_min, largest * self.config.hand_size_ratio_max)
 
@@ -75,7 +75,7 @@ class PostureMonitor:
     def _message(self, hand: str, ratio: float) -> str:
         name = HAND_NAMES[hand]
         if ratio * self._reference(hand) < self._limits(hand)[0]:
-            return (f"Mano {name}: ha girado o se ha alejado ({ratio:.0%} del tamaño calibrado). "
-                    "Vuelve a la postura de la calibración.")
-        return (f"Mano {name}: demasiado cerca ({ratio:.0%} del tamaño calibrado). "
-                "Vuelve a la postura de la calibración.")
+            return (f"{name} hand: rotated or moved away ({ratio:.0%} of the calibrated size). "
+                    "Return to the calibration posture.")
+        return (f"{name} hand: too close ({ratio:.0%} of the calibrated size). "
+                "Return to the calibration posture.")

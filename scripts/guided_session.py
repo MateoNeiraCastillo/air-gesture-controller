@@ -1,14 +1,13 @@
-"""Sesión guiada de ~2,5 minutos: el examen final de la Fase 2.
+"""~2.5-minute guided session: the final exam of Phase 2.
 
-1. Calibras como en calibrate_live.py (R para repetir si se rechaza).
-2. Durante ~2,5 min la pantalla te pide acciones (mantener derecha, pulsar A
-   3 veces, derecha + A...). Arriba ves la actual y debajo la siguiente.
-   El panel inferior muestra lo que recibiría el juego, como en la vista
-   en directo.
-3. Al terminar (o con Q) se guarda todo en data/guided/ para analizarlo con:
+1. You calibrate as in calibrate_live.py (R to repeat if rejected).
+2. For ~2.5 min the screen asks you for actions (hold right, press A
+   3 times, right + A...). The current one is at the top and the next below it.
+   The bottom panel shows what the game would receive, as in the live view.
+3. When it finishes (or on Q) everything is saved in data/guided/ for analysis with:
        python scripts/evaluate_guided.py
 
-Uso:
+Usage:
     python scripts/guided_session.py
 """
 
@@ -21,28 +20,16 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from calibrate_live import (  # noqa: E402  (script hermano, mismo directorio)
-    GRAY,
-    RED,
-    WHITE,
-    LiveCalibration,
-    detect_hands,
-    draw_hands,
-    draw_progress,
-    draw_reading,
-    put_lines,
-    wrap,
-)
+from calibrate_live import LiveCalibration, detect_hands  # noqa: E402  (sibling script, same directory)
 
 from air_controller.capture import LatestFrameCamera, VideoFileSource  # noqa: E402
 from air_controller.config import load_config  # noqa: E402
+from air_controller.dashboard import WINDOW, draw_hands, render_game  # noqa: E402
 from air_controller.guided import build_script, to_mask  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "data" / "guided"
-WINDOW = "calibracion"
 LEAD_IN_MS = 3000
-YELLOW = (0, 220, 255)
 
 
 class GuidedSession:
@@ -58,7 +45,7 @@ class GuidedSession:
         self.start_ms: int | None = None
 
     def run(self) -> bool:
-        """True si la sesión llegó al final; False si se abortó con Q."""
+        """True if the session reached the end; False if aborted with Q."""
         empty = np.full((21, 3), np.nan)
         while True:
             frame = self.app.source.read()
@@ -79,18 +66,19 @@ class GuidedSession:
             events = self.app.machine.update(reading, now)
             for event in events:
                 self.events.append((event.timestamp_ms, event.button.value, event.pressed))
+            self.app.count_presses(events)
             warnings = self.app.posture.update(left, right, now)
 
             if index is not None:
                 self._record(now, index, reading, warnings, left, right, empty)
-            self._draw(image, elapsed, index, reading, warnings)
+            canvas = self._draw(image, elapsed, index, reading, warnings)
             if self.app.show:
-                cv2.imshow(WINDOW, image)
+                cv2.imshow(WINDOW, canvas)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     return False
 
     def _step_index(self, elapsed: int) -> int | None:
-        """Índice del paso en curso (len(script) al terminar); None en la cuenta atrás."""
+        """Index of the current step (len(script) when finished); None during the countdown."""
         if elapsed < 0:
             return None
         index = int(np.searchsorted(self.offsets_ms, elapsed, side="right")) - 1
@@ -111,27 +99,24 @@ class GuidedSession:
         self.rows["left"].append(empty if left is None else left)
         self.rows["right"].append(empty if right is None else right)
 
-    def _draw(self, image, elapsed, index, reading, warnings) -> None:
-        draw_reading(image, reading, self.app.config.classifier.dpad_threshold, self.app.machine.held)
+    def _draw(self, image, elapsed, index, reading, warnings):
         if index is None:
-            first = self.script[0][1].text
-            put_lines(image, [f"Empieza en {-elapsed / 1000:.0f}...", f"Primero: {first}"],
-                      (15, 35), YELLOW, 0.8)
-            return
-        block, step = self.script[index]
-        progress = (elapsed - self.offsets_ms[index]) / step.duration_ms
-        put_lines(image, [step.text], (15, 40), WHITE, 0.9)
-        if index + 1 < len(self.script):
-            put_lines(image, [f"Siguiente: {self.script[index + 1][1].text}"], (15, 75), GRAY, 0.55)
-        put_lines(image, [f"Bloque {block}/3   paso {index + 1}/{len(self.script)}"],
-                  (15, 100), GRAY, 0.45)
-        draw_progress(image, progress, 110)
-        if warnings:
-            put_lines(image, [line for w in warnings for line in wrap(w)], (15, 150), RED, 0.5)
+            banner = (f"Starting in {-elapsed / 1000:.0f}...", f"First: {self.script[0][1].text}")
+            progress = None
+        else:
+            block, step = self.script[index]
+            following = (f"Next: {self.script[index + 1][1].text}"
+                         if index + 1 < len(self.script) else "Last step")
+            banner = (step.text, following,
+                      f"Block {block}/3   step {index + 1}/{len(self.script)}")
+            progress = (elapsed - self.offsets_ms[index]) / step.duration_ms
+        return render_game(image, self.app.game_view(
+            reading, warnings, status="GUIDED", banner=banner, banner_progress=progress,
+            hints=("Q  stop and save",)))
 
     def save(self, completed: bool) -> Path:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        path = OUT_DIR / f"sesion_{datetime.now().strftime('%Y%m%d_%H%M%S')}.npz"
+        path = OUT_DIR / f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.npz"
         rows = {key: np.array(values) for key, values in self.rows.items()}
         np.savez_compressed(
             path,
@@ -150,8 +135,8 @@ class GuidedSession:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sesión guiada de la Fase 2.")
-    parser.add_argument("--video", type=Path, help="usar un vídeo en vez de la cámara (pruebas)")
+    parser = argparse.ArgumentParser(description="Phase 2 guided session.")
+    parser.add_argument("--video", type=Path, help="use a video instead of the camera (testing)")
     parser.add_argument("--blocks", type=int, default=3)
     args = parser.parse_args()
     config = load_config()
@@ -159,19 +144,19 @@ def main() -> None:
     app = LiveCalibration(source, config)
     session = None
     try:
-        # Fase 1: calibrar hasta que se acepte (R repite, Q sale).
-        while not (app.result is not None and app.result.ok):
+        # Phase 1: calibrate until accepted (R repeats, Q quits).
+        while not app.ready:
             if not app.step():
-                print("Calibración interrumpida; no hay sesión.")
+                print("Calibration interrupted; no session.")
                 return
-        print("\nCalibración aceptada. Empieza la sesión guiada.")
+        print("\nCalibration accepted. Starting the guided session.")
         session = GuidedSession(app, args.blocks)
         completed = session.run()
         app.machine.release_all(app.last_timestamp_ms)
         path = session.save(completed)
-        status = "completa" if completed else "interrumpida (se guarda igualmente)"
-        print(f"Sesión {status}: {path.relative_to(ROOT)}")
-        print("Analízala con: python scripts/evaluate_guided.py")
+        status = "complete" if completed else "interrupted (saved anyway)"
+        print(f"Session {status}: {path.relative_to(ROOT)}")
+        print("Analyse it with: python scripts/evaluate_guided.py")
     finally:
         app.close()
 

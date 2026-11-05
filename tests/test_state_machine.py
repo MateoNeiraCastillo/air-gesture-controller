@@ -26,7 +26,7 @@ def test_single_frame_blip_is_ignored() -> None:
 
 def test_sustained_press_is_confirmed_after_press_confirm_ms() -> None:
     _, events = run([reading()] + [reading(Button.A)] * 4)
-    # se ve pulsado desde t=40; 80 ms después (t=120) se confirma
+    # seen pressed from t=40; confirmed 80 ms later (t=120)
     assert events == [ButtonEvent(Button.A, True, 120)]
 
 
@@ -53,7 +53,7 @@ def test_short_hand_loss_keeps_button_held() -> None:
 def test_long_hand_loss_releases_only_that_hands_buttons() -> None:
     frames = [reading(Button.A, Button.LEFT)] * 4 + [reading(Button.LEFT, right=False)] * 8
     machine, events = run(frames)
-    assert ButtonEvent(Button.A, False, 360) in events      # perdida desde t=160, +200 ms
+    assert ButtonEvent(Button.A, False, 360) in events      # lost since t=160, +200 ms
     assert machine.held == {Button.LEFT}
 
 

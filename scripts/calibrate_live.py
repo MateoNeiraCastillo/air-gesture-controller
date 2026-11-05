@@ -1,29 +1,26 @@
-"""Calibración en directo y vista de lo que lee el clasificador.
+"""Live calibration and a view of what the classifier reads.
 
-1. Te guía por las 4 posturas (reposo, A pulsado, cruceta izquierda,
-   cruceta derecha). Antes de cada una tienes 3 s para colocarte.
-2. Si la calibración no pasa el control de calidad, te dice por qué
-   (en pantalla y en la terminal). Pulsa R para repetir.
-3. Si pasa, muestra en directo lo que haría el mando:
-   - A: aro naranja = el clasificador lo ve pulsado en este frame;
-        relleno verde = pulsación CONFIRMADA (lo que recibiría el juego).
-   - Cruceta: una barra que va del reposo (centro) hacia izquierda o derecha.
-     La raya blanca marca el umbral. IZQ/DER en verde = confirmado.
-   - Avisos del monitor de postura arriba, en rojo.
-   En la terminal se imprime cada pulsación y liberación confirmada.
+1. Waits until both hands are in view, then guides you through the 4 poses
+   (rest, A pressed, D-pad left, D-pad right). Each one starts with a countdown
+   in the center of the screen.
+2. If the calibration fails quality control, it tells you why
+   (on screen and in the terminal). Press R to repeat.
+3. If it passes, it shows SUCCESS and then the dashboard (air_controller/dashboard.py).
+   Every confirmed press and release is printed in the terminal.
 
-Teclas: R = recalibrar, Q = salir.
+Keys: R = recalibrate, Q = quit.
 
-Al salir guarda la calibración en data/live/ para poder analizarla.
+On exit it saves the calibration in data/live/ so it can be analysed.
 
-Uso:
+Usage:
     python scripts/calibrate_live.py
-    python scripts/calibrate_live.py --video data/raw/algo.mp4   # sin cámara
+    python scripts/calibrate_live.py --video data/raw/something.mp4   # no camera
 """
 
 import argparse
+import math
 import time
-import unicodedata
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -34,10 +31,26 @@ from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python import vision
 
 from air_controller.buttons import Button
-from air_controller.calibration import CalibrationCollector, CalibrationResult, Pose
+from air_controller.calibration import (
+    CALIBRATION_SEQUENCE,
+    REQUIRED_HANDS,
+    CalibrationCollector,
+    CalibrationResult,
+    Pose,
+)
 from air_controller.capture import FrameSource, LatestFrameCamera, VideoFileSource
 from air_controller.classifier import Classifier, FrameReading
 from air_controller.config import Config, load_config
+from air_controller.dashboard import (
+    GREEN,
+    WINDOW,
+    CalibrationView,
+    GameView,
+    draw_hands,
+    open_window,
+    render_calibration,
+    render_game,
+)
 from air_controller.hands import assign_hands
 from air_controller.posture import PostureMonitor
 from air_controller.state_machine import ButtonStateMachine
@@ -45,22 +58,29 @@ from air_controller.state_machine import ButtonStateMachine
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = ROOT / "models" / "hand_landmarker.task"
 LIVE_DIR = ROOT / "data" / "live"
-PREPARE_SECONDS = 3.0
-WINDOW = "calibracion"
+PREPARE_SECONDS = 4.0
+POSITION_SECONDS = 1.0   # both hands in view for this long before the first pose
+SUCCESS_SECONDS = 2.5
 
-GREEN = (80, 200, 80)
-ORANGE = (40, 140, 255)
-RED = (60, 60, 230)
-GRAY = (150, 150, 150)
-WHITE = (255, 255, 255)
+POSITION_TITLE = "GET INTO POSITION"
+POSITION_LINES = ("Raise both hands in front of the camera,",
+                  "as if you were holding a game controller.",
+                  "Left hand on the left of the screen, right hand on the right.",
+                  "Calibration starts by itself when both hands are seen.")
 
 INSTRUCTIONS = {
-    Pose.REST: ["REPOSO", "Sujeta el mando. Pulgares apoyados, sin pulsar nada."],
-    Pose.A_PRESSED: ["A PULSADO", "Pulsa A a fondo con el pulgar derecho.",
-                     "El pulgar IZQUIERDO se queda QUIETO, como en reposo."],
-    Pose.DPAD_LEFT: ["CRUCETA IZQUIERDA", "Lleva el pulgar izquierdo a la izquierda y mantenlo."],
-    Pose.DPAD_RIGHT: ["CRUCETA DERECHA", "Lleva el pulgar izquierdo a la derecha y mantenlo.",
-                      "Que sea un movimiento claro, distinto del reposo."],
+    Pose.REST: ("RELAX BOTH THUMBS",
+                ("Hold the invisible controller with both hands.",
+                 "Thumbs relaxed, pressing nothing. Then stay still.")),
+    Pose.A_PRESSED: ("RIGHT THUMB: PRESS A",
+                     ("Push your right thumb all the way down and hold it there.",
+                      "Keep your LEFT thumb completely still.")),
+    Pose.DPAD_LEFT: ("LEFT THUMB: PUSH LEFT",
+                     ("Move your left thumb as far left as is comfortable,",
+                      "and hold it there.")),
+    Pose.DPAD_RIGHT: ("LEFT THUMB: PUSH RIGHT",
+                      ("Move your left thumb as far right as is comfortable,",
+                       "and hold it there. Make it a big, clear movement.")),
 }
 
 
@@ -83,7 +103,7 @@ def build_landmarker() -> vision.HandLandmarker:
 
 def detect_hands(landmarker: vision.HandLandmarker, image: np.ndarray,
                  timestamp_ms: int) -> tuple[np.ndarray | None, np.ndarray | None]:
-    """Landmarks (21, 3) en píxeles de la mano izquierda y derecha, o None."""
+    """Landmarks (21, 3) in pixels for the left and right hand, or None."""
     rgb = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     result = landmarker.detect_for_video(rgb, timestamp_ms)
     assigned = assign_hands(result.hand_landmarks)
@@ -98,89 +118,7 @@ def detect_hands(landmarker: vision.HandLandmarker, image: np.ndarray,
 
 
 # --------------------------------------------------------------------------- #
-# Dibujo (OpenCV no dibuja tildes: se quitan solo para la pantalla)
-# --------------------------------------------------------------------------- #
-
-def ascii(text: str) -> str:
-    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-
-
-def put_lines(image: np.ndarray, lines: list[str], origin: tuple[int, int],
-              color: tuple[int, int, int] = WHITE, scale: float = 0.55) -> None:
-    x, y = origin
-    for line in lines:
-        cv2.putText(image, ascii(line), (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 4)
-        cv2.putText(image, ascii(line), (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1)
-        y += int(30 * scale / 0.55)
-
-
-def wrap(text: str, width: int = 62) -> list[str]:
-    words, lines, line = text.split(), [], ""
-    for word in words:
-        if len(line) + len(word) + 1 > width:
-            lines.append(line)
-            line = word
-        else:
-            line = f"{line} {word}".strip()
-    return lines + [line] if line else lines
-
-
-def draw_hands(image: np.ndarray, left: np.ndarray | None, right: np.ndarray | None) -> None:
-    for hand, color in ((left, ORANGE), (right, (255, 200, 0))):
-        if hand is not None:
-            for x, y, _ in hand:
-                cv2.circle(image, (int(x), int(y)), 2, color, -1)
-
-
-def draw_progress(image: np.ndarray, fraction: float, y: int) -> None:
-    width = image.shape[1] - 40
-    cv2.rectangle(image, (20, y), (20 + width, y + 14), GRAY, 1)
-    cv2.rectangle(image, (20, y), (20 + int(width * min(fraction, 1.0)), y + 14), GREEN, -1)
-
-
-def draw_reading(image: np.ndarray, reading: FrameReading, threshold: float,
-                 held: frozenset[Button]) -> None:
-    """Panel inferior: botón A y barra de la cruceta. `held` = confirmados."""
-    height, width = image.shape[:2]
-    top = height - 90
-    cv2.rectangle(image, (0, top), (width, height), (30, 30, 30), -1)
-
-    # Botón A
-    center = (width - 60, top + 45)
-    if Button.A in held:
-        cv2.circle(image, center, 28, GREEN, -1)
-    cv2.circle(image, center, 28, ORANGE if Button.A in reading.pressed else GRAY, 3)
-    put_lines(image, ["A"], (center[0] - 9, center[1] + 8), WHITE, 0.8)
-    if not reading.right_visible:
-        put_lines(image, ["sin mano der."], (width - 130, top + 85), RED, 0.45)
-
-    # Cruceta: -1 (izquierda calibrada) ... 0 (reposo) ... +1 (derecha calibrada)
-    bar_left, bar_right = 30, width - 140
-    mid = (bar_left + bar_right) // 2
-    half = (bar_right - bar_left) // 2
-    y = top + 45
-    scale = half / 1.3   # el extremo de la barra es 130 % del recorrido calibrado
-    cv2.line(image, (bar_left, y), (bar_right, y), GRAY, 2)
-    for sign in (-1, 1):
-        x = mid + sign * int(threshold * scale)          # umbral
-        cv2.line(image, (x, y - 14), (x, y + 14), WHITE, 1)
-        x = mid + sign * int(scale)                      # postura calibrada
-        cv2.line(image, (x, y - 6), (x, y + 6), GRAY, 1)
-    if reading.left_visible:
-        value = (reading.dpad_right_progress if reading.dpad_right_progress >= reading.dpad_left_progress
-                 else -reading.dpad_left_progress)
-        x = mid + int(np.clip(value, -1.3, 1.3) * scale)
-        lit = Button.LEFT in reading.pressed or Button.RIGHT in reading.pressed
-        cv2.circle(image, (int(np.clip(x, bar_left, bar_right)), y), 10, GREEN if lit else ORANGE, -1)
-    else:
-        put_lines(image, ["sin mano izq."], (bar_left, top + 85), RED, 0.45)
-    put_lines(image, ["IZQ"], (bar_left - 5, top + 20), GREEN if Button.LEFT in held else GRAY, 0.5)
-    put_lines(image, ["DER"], (bar_right - 30, top + 20), GREEN if Button.RIGHT in held else GRAY, 0.5)
-    put_lines(image, ["R = recalibrar   Q = salir"], (bar_left + 120, top + 85), GRAY, 0.45)
-
-
-# --------------------------------------------------------------------------- #
-# Fases
+# Phases
 # --------------------------------------------------------------------------- #
 
 class LiveCalibration:
@@ -194,10 +132,22 @@ class LiveCalibration:
         self.classifier: Classifier | None = None
         self.pose_started_at: float | None = None
         self.current_pose: Pose | None = None
+        self.positioned = False
+        self.both_hands_since: float | None = None
+        self.success_until = 0.0
         self.readings: list[FrameReading] = []
         self.machine = ButtonStateMachine(config.timing)
         self.posture: PostureMonitor | None = None
+        self.presses: Counter[Button] = Counter()
         self.last_timestamp_ms = 0
+        if show:
+            open_window()
+
+    @property
+    def ready(self) -> bool:
+        """True once the calibration is accepted and the SUCCESS screen has been shown."""
+        return (self.result is not None and self.result.ok
+                and time.perf_counter() >= self.success_until)
 
     def restart(self) -> None:
         self._log_events(self.machine.release_all(self.last_timestamp_ms))
@@ -205,10 +155,13 @@ class LiveCalibration:
         self.result = None
         self.classifier = None
         self.current_pose = None
-        print("\n--- Calibración reiniciada ---")
+        self.positioned = False
+        self.both_hands_since = None
+        self.presses.clear()
+        print("\n--- Calibration restarted ---")
 
     def step(self) -> bool:
-        """Procesa un frame. False cuando hay que salir."""
+        """Processes one frame. False when it is time to quit."""
         frame = self.source.read()
         if frame is None:
             return False
@@ -218,43 +171,75 @@ class LiveCalibration:
         draw_hands(image, left, right)
 
         if self.result is None:
-            self._calibrating(image, left, right)
-        elif self.result.ok:
+            canvas = self._calibrating(image, left, right)
+        elif not self.result.ok:
+            canvas = render_calibration(image, CalibrationView(
+                "rejected", lines=tuple(self.result.problems), step=len(CALIBRATION_SEQUENCE),
+                left_seen=left is not None, right_seen=right is not None))
+        elif not self.ready:
+            canvas = render_calibration(image, CalibrationView(
+                "success", lines=("Calibration complete. Starting the controller...",),
+                step=len(CALIBRATION_SEQUENCE),
+                left_seen=left is not None, right_seen=right is not None))
+        else:
             reading = self.classifier.classify(left, right)
             self.readings.append(reading)
-            self._log_events(self.machine.update(reading, frame.timestamp_ms))
-            draw_reading(image, reading, self.config.classifier.dpad_threshold, self.machine.held)
+            events = self.machine.update(reading, frame.timestamp_ms)
+            self._log_events(events)
+            self.count_presses(events)
             warnings = self.posture.update(left, right, frame.timestamp_ms)
-            if warnings:
-                put_lines(image, [line for w in warnings for line in wrap(w)], (15, 30), RED)
-        else:
-            lines = ["CALIBRACION RECHAZADA"]
-            for problem in self.result.problems:
-                lines += wrap(problem)
-            lines.append("Pulsa R para repetir.")
-            put_lines(image, lines, (15, 30), RED)
+            canvas = render_game(image, self.game_view(reading, warnings))
 
-        return self._show(image)
+        return self._show(canvas)
 
-    def _calibrating(self, image: np.ndarray, left, right) -> None:
+    def count_presses(self, events) -> None:
+        for event in events:
+            if event.pressed:
+                self.presses[event.button] += 1
+
+    def game_view(self, reading: FrameReading, warnings: list[str], **overrides) -> GameView:
+        """What the dashboard shows. By default, what is confirmed counts as sent."""
+        values = dict(reading=reading, held=self.machine.held, sent=self.machine.held,
+                      keys=self.config.keys, threshold=self.config.classifier.dpad_threshold,
+                      presses=self.presses, status="LIVE", status_color=GREEN,
+                      warnings=tuple(warnings))
+        return GameView(**{**values, **overrides})
+
+    def _calibrating(self, image: np.ndarray, left, right) -> np.ndarray:
+        seen = dict(left_seen=left is not None, right_seen=right is not None)
+        now = time.perf_counter()
+        if not self.positioned:
+            both = left is not None and right is not None
+            if not both:
+                self.both_hands_since = None
+            elif self.both_hands_since is None:
+                self.both_hands_since = now
+            if not both or now - self.both_hands_since < POSITION_SECONDS:
+                return render_calibration(image, CalibrationView(
+                    "position", POSITION_TITLE, POSITION_LINES, **seen))
+            self.positioned = True
+
         pose = self.collector.current_pose
         if pose is not self.current_pose:
             self.current_pose = pose
-            self.pose_started_at = time.perf_counter()
-            print(f"Postura: {pose.value}")
-        waiting = PREPARE_SECONDS - (time.perf_counter() - self.pose_started_at)
-        lines = INSTRUCTIONS[pose]
+            self.pose_started_at = now
+            print(f"Pose: {pose.value}")
+        title, lines = INSTRUCTIONS[pose]
+        needed = dict(left_needed="left" in REQUIRED_HANDS[pose],
+                      right_needed="right" in REQUIRED_HANDS[pose])
+        number = CALIBRATION_SEQUENCE.index(pose) + 1
+        waiting = PREPARE_SECONDS - (now - self.pose_started_at)
         if waiting > 0:
-            put_lines(image, lines + [f"Colocate... {waiting:.0f}"], (15, 30), (0, 220, 255))
-            return
-        counted = self.collector.add(left, right)
-        put_lines(image, lines, (15, 30))
-        if not counted:
-            missing = "izquierda" if left is None else "derecha"
-            put_lines(image, [f"No veo la mano {missing}"], (15, image.shape[0] - 40), RED)
-        draw_progress(image, self.collector.progress, image.shape[0] - 25)
+            return render_calibration(image, CalibrationView(
+                "prepare", title, lines, number, countdown=math.ceil(waiting), **seen, **needed))
+
+        self.collector.add(left, right)
+        # The collector moves on by itself: this pose is complete if it no longer is the current one.
+        progress = 1.0 if self.collector.current_pose is not pose else self.collector.progress
         if self.collector.done:
             self._finish_calibration()
+        return render_calibration(image, CalibrationView(
+            "capture", title, lines, number, progress=progress, **seen, **needed))
 
     def _finish_calibration(self) -> None:
         self.result = self.collector.build(self.config.calibration.min_separation,
@@ -263,14 +248,16 @@ class LiveCalibration:
             self.classifier = Classifier(self.result.calibration, self.config.classifier)
             self.posture = PostureMonitor(self.result.calibration, self.config.posture)
             self.machine = ButtonStateMachine(self.config.timing)
+            self.presses.clear()
+            self.success_until = time.perf_counter() + SUCCESS_SECONDS
             progress = self.result.calibration.dpad.progress(
                 self.result.calibration.left_rest_while_a.center)
-            print("Calibración ACEPTADA.")
-            print(f"  Pulgar izquierdo al pulsar A: {progress[Button.LEFT]:.0%} hacia izquierda, "
-                  f"{progress[Button.RIGHT]:.0%} hacia derecha (límite "
+            print("Calibration ACCEPTED.")
+            print(f"  Left thumb when pressing A: {progress[Button.LEFT]:.0%} towards left, "
+                  f"{progress[Button.RIGHT]:.0%} towards right (limit "
                   f"{self.config.classifier.dpad_threshold / 2:.0%})")
         else:
-            print("Calibración RECHAZADA:", *self.result.problems, sep="\n  ")
+            print("Calibration REJECTED:", *self.result.problems, sep="\n  ")
         self._save_calibration()
 
     def _save_calibration(self) -> None:
@@ -279,10 +266,10 @@ class LiveCalibration:
         arrays = {f"{pose.name}_{hand}": values
                   for pose, by_hand in self.collector.samples().items()
                   for hand, values in by_hand.items()}
-        path = LIVE_DIR / f"calibracion_{stamp}.npz"
+        path = LIVE_DIR / f"calibration_{stamp}.npz"
         np.savez(path, accepted=np.array(self.result.ok),
                  problems=np.array(self.result.problems, dtype=object), **arrays)
-        print(f"  Guardada en {path.relative_to(ROOT)}")
+        print(f"  Saved to {path.relative_to(ROOT)}")
 
     def _show(self, image: np.ndarray) -> bool:
         if not self.show:
@@ -297,7 +284,7 @@ class LiveCalibration:
 
     def _log_events(self, events) -> None:
         for event in events:
-            action = "PULSA " if event.pressed else "suelta"
+            action = "PRESS  " if event.pressed else "release"
             print(f"  {event.timestamp_ms / 1000:8.2f} s  {action} {event.button.value}")
 
     def close(self) -> None:
@@ -309,11 +296,11 @@ class LiveCalibration:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Calibración en directo.")
-    parser.add_argument("--video", type=Path, help="usar un vídeo en vez de la cámara")
+    parser = argparse.ArgumentParser(description="Live calibration.")
+    parser.add_argument("--video", type=Path, help="use a video instead of the camera")
     args = parser.parse_args()
     if not MODEL_PATH.exists():
-        print(f"Falta el modelo en {MODEL_PATH}.")
+        print(f"Model missing at {MODEL_PATH}.")
         return
     config = load_config()
     source = VideoFileSource(args.video) if args.video else LatestFrameCamera()

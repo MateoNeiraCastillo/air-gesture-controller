@@ -1,20 +1,20 @@
-"""Capa 3: qué botones están pulsados en ESTE frame, según la calibración.
+"""Layer 3: which buttons are pressed in THIS frame, according to the calibration.
 
-Lógica pura y sin memoria: un frame entra, una lectura sale. El suavizado en
-el tiempo (no soltar un botón por un frame raro) es cosa de la máquina de
-estados (capa 4).
+Pure, memoryless logic: one frame in, one reading out. Smoothing over time
+(not releasing a button because of one odd frame) is the job of the state
+machine (layer 4).
 
-- Botón A: ¿la punta del pulgar derecho está más cerca del "pulsado" o del
-  "reposo" calibrados? Distancias medidas en anchuras de ruido.
-- Cruceta, en dos pasos:
-    1. Dirección: la postura calibrada (izquierda o derecha) más cercana.
-    2. Intensidad: cuánto ha avanzado el pulgar desde el reposo hacia ella.
-       Cuenta como pulsado a partir de `dpad_threshold` del recorrido.
-  Así, empujar más flojo que al calibrar sigue funcionando (en el spike, el
-  `combo` de día se empujó menos que `dpad_der`). La dirección NO se elige por
-  "mayor avance": en la sesión de noche izquierda y derecha iban en la misma
-  dirección (coseno +0,95) y la derecha era un recorrido corto; un punto de
-  "izquierda" avanzaba 3 veces más en el eje corto de la derecha.
+- Button A: is the right thumb tip closer to the calibrated "pressed" or
+  "rest"? Distances measured in noise widths.
+- D-pad, in two steps:
+    1. Direction: the nearest calibrated pose (left or right).
+    2. Intensity: how far the thumb has moved from rest towards it.
+       Counts as pressed from `dpad_threshold` of the travel onwards.
+  This way, pushing more lightly than during calibration still works (in the
+  spike, the daytime `combo` was pushed less than `dpad_right`). The direction
+  is NOT chosen by "largest progress": in the night session left and right
+  pointed the same way (cosine +0.95) and right was a short travel; a "left"
+  point progressed 3 times further along right's short axis.
 """
 
 from dataclasses import dataclass
@@ -29,24 +29,25 @@ from air_controller.features import thumb_position_features
 
 @dataclass(frozen=True)
 class FrameReading:
-    """Resultado de clasificar un frame."""
+    """Result of classifying a frame."""
 
     pressed: frozenset[Button]
     left_visible: bool
     right_visible: bool
-    dpad_left_progress: float    # 0 = reposo, 1 = como en la calibración; NaN si no se ve
+    dpad_left_progress: float    # 0 = rest, 1 = as in calibration; NaN if not visible
     dpad_right_progress: float
+    dpad_direction: Button | None = None   # nearest calibrated direction; None if not visible
 
 
 @dataclass(frozen=True)
 class DpadAxis:
-    """Una dirección de la cruceta, precalculada a partir de la calibración."""
+    """One D-pad direction, precomputed from the calibration."""
 
-    unit: np.ndarray        # dirección reposo → objetivo, en espacio escalado
-    length: float           # distancia reposo → objetivo, en el mismo espacio
+    unit: np.ndarray        # direction rest → target, in scaled space
+    length: float           # distance rest → target, in the same space
 
     def progress(self, offset: np.ndarray) -> float:
-        """Fracción del recorrido calibrado que ha hecho `offset` en esta dirección."""
+        """Fraction of the calibrated travel covered by `offset` in this direction."""
         return float(offset @ self.unit) / self.length
 
 
@@ -57,7 +58,7 @@ class Classifier:
         self._button_scale = _pooled_spread(calibration.right_rest, calibration.right_pressed)
 
     def classify(self, left: np.ndarray | None, right: np.ndarray | None) -> FrameReading:
-        """`left`/`right`: landmarks (21, 3) en píxeles, o None si no se ve la mano."""
+        """`left`/`right`: landmarks (21, 3) in pixels, or None if the hand is not visible."""
         pressed: set[Button] = set()
         left_features = _features(left)
         right_features = _features(right)
@@ -66,6 +67,7 @@ class Classifier:
             pressed.add(Button.A)
 
         progress = {Button.LEFT: float("nan"), Button.RIGHT: float("nan")}
+        nearest = None
         if left_features is not None:
             point = left_features[list(DPAD_COLUMNS)]
             progress = self._calibration.dpad.progress(point)
@@ -79,6 +81,7 @@ class Classifier:
             right_visible=right_features is not None,
             dpad_left_progress=progress[Button.LEFT],
             dpad_right_progress=progress[Button.RIGHT],
+            dpad_direction=nearest,
         )
 
     def _a_pressed(self, features: np.ndarray) -> bool:
@@ -96,5 +99,5 @@ def _features(landmarks: np.ndarray | None) -> np.ndarray | None:
 
 
 def _pooled_spread(*references: Reference) -> np.ndarray:
-    """Escala común: media cuadrática de las dispersiones de las posturas."""
+    """Common scale: root mean square of the poses' spreads."""
     return np.sqrt(np.mean([reference.spread ** 2 for reference in references], axis=0))

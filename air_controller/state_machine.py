@@ -1,16 +1,16 @@
-"""Capa 4: de lecturas por frame a pulsaciones de verdad.
+"""Layer 4: from per-frame readings to real presses.
 
-El clasificador dice qué parece pulsado en cada frame, con algún parpadeo
-suelto. La máquina de estados decide cuándo pulsar y soltar de verdad:
+The classifier says what looks pressed in each frame, with the occasional
+flicker. The state machine decides when to actually press and release:
 
-- Pulsar: el botón tiene que verse pulsado durante `press_confirm_ms` seguidos.
-- Soltar: tiene que verse soltado durante `release_confirm_ms` seguidos.
-- Mano no visible: es "sin información", no "soltado". El botón mantiene su
-  estado; si la mano falta más de `missing_hand_ms`, se sueltan sus botones
-  para no dejar teclas pegadas.
+- Press: the button must be seen pressed for `press_confirm_ms` in a row.
+- Release: it must be seen released for `release_confirm_ms` in a row.
+- Hand not visible: means "no information", not "released". The button keeps
+  its state; if the hand is missing for more than `missing_hand_ms`, its
+  buttons are released so no keys are left stuck.
 
-Trabaja con tiempos en milisegundos, no con frames: con CPU vamos a ~25 fps,
-no a 30, y el ritmo de frames puede variar.
+It works with times in milliseconds, not frames: on CPU we run at ~25 fps,
+not 30, and the frame rate can vary.
 """
 
 from dataclasses import dataclass, field
@@ -19,21 +19,21 @@ from air_controller.buttons import Button
 from air_controller.classifier import FrameReading
 from air_controller.config import TimingConfig
 
-# Qué mano controla cada botón.
+# Which hand controls each button.
 HAND_OF = {Button.LEFT: "left", Button.RIGHT: "left", Button.A: "right"}
 
 
 @dataclass(frozen=True)
 class ButtonEvent:
     button: Button
-    pressed: bool          # True = pulsar, False = soltar
+    pressed: bool          # True = press, False = release
     timestamp_ms: int
 
 
 @dataclass
 class _ButtonState:
     pressed: bool = False
-    change_since_ms: int | None = None    # desde cuándo se ve lo contrario al estado actual
+    change_since_ms: int | None = None    # since when the opposite of the current state has been seen
 
 
 @dataclass
@@ -49,7 +49,7 @@ class ButtonStateMachine:
         return frozenset(button for button, state in self._buttons.items() if state.pressed)
 
     def update(self, reading: FrameReading, timestamp_ms: int) -> list[ButtonEvent]:
-        """Procesa la lectura de un frame. Devuelve los eventos que hay que enviar."""
+        """Processes one frame's reading. Returns the events to send."""
         visible = {"left": reading.left_visible, "right": reading.right_visible}
         self._track_missing(visible, timestamp_ms)
         events: list[ButtonEvent] = []
@@ -64,7 +64,7 @@ class ButtonStateMachine:
         return events
 
     def release_all(self, timestamp_ms: int) -> list[ButtonEvent]:
-        """Suelta todo (al salir o al recalibrar): nunca dejar una tecla pegada."""
+        """Releases everything (on exit or recalibration): never leave a key stuck."""
         events = []
         for button, state in self._buttons.items():
             if state.pressed:
@@ -78,10 +78,10 @@ class ButtonStateMachine:
     def _observe(self, button: Button, state: _ButtonState, seen_pressed: bool,
                  now: int) -> ButtonEvent | None:
         if seen_pressed == state.pressed:
-            state.change_since_ms = None          # coincide con el estado: nada pendiente
+            state.change_since_ms = None          # matches the state: nothing pending
             return None
         if state.change_since_ms is None:
-            state.change_since_ms = now           # empieza a verse el cambio
+            state.change_since_ms = now           # the change starts being seen
         confirm = self.timing.press_confirm_ms if seen_pressed else self.timing.release_confirm_ms
         if now - state.change_since_ms < confirm:
             return None
@@ -91,7 +91,7 @@ class ButtonStateMachine:
 
     def _without_hand(self, button: Button, state: _ButtonState, hand: str,
                       now: int) -> ButtonEvent | None:
-        state.change_since_ms = None              # sin información: no confirma nada
+        state.change_since_ms = None              # no information: confirms nothing
         missing_since = self._missing_since_ms[hand]
         if state.pressed and missing_since is not None and \
                 now - missing_since >= self.timing.missing_hand_ms:

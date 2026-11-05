@@ -45,7 +45,7 @@ def test_context_manager_releases_even_on_error() -> None:
     with pytest.raises(RuntimeError):
         with KeyOutput(sender, KEYS) as output:
             output.apply([press(Button.RIGHT)])
-            raise RuntimeError("fallo en mitad de la partida")
+            raise RuntimeError("failure in the middle of the game")
     assert sender.log[-1] == ("release", "right")
 
 
@@ -63,9 +63,9 @@ def test_invalid_key_names_fail_at_startup(key: str) -> None:
 def test_latency_summary() -> None:
     tracker = LatencyTracker()
     for i in range(10):
-        tracker.add_stage("deteccion", 30 + i)
+        tracker.add_stage("detection", 30 + i)
         tracker.add_frame(i * 0.04)
     tracker.add_end_to_end(50.0)
     text = tracker.summary()
-    assert "deteccion" in text and "frame → tecla" in text
+    assert "detection" in text and "frame → key" in text
     assert tracker.fps() == pytest.approx(25.0)

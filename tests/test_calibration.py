@@ -15,7 +15,7 @@ RNG = np.random.default_rng(0)
 
 
 def make_hand(tip_x: float, tip_y: float, noise: float = 0.5) -> np.ndarray:
-    """Mano sintética de tamaño 100 px; solo importan muñeca, bases y punta del pulgar."""
+    """Synthetic 100 px hand; only the wrist, finger bases and thumb tip matter."""
     hand = np.zeros((21, 3))
     hand[WRIST] = [0, 100, 0]
     hand[MIDDLE_MCP] = [0, 0, 0]
@@ -24,7 +24,7 @@ def make_hand(tip_x: float, tip_y: float, noise: float = 0.5) -> np.ndarray:
     return hand + RNG.normal(0, noise, hand.shape)
 
 
-# Posturas sintéticas claramente distintas (punta del pulgar, en píxeles).
+# Clearly distinct synthetic poses (thumb tip, in pixels).
 REST = (60, -40)
 PRESSED = (60, 10)
 DPAD_LEFT = (20, -40)
@@ -67,26 +67,26 @@ def test_good_calibration_is_accepted() -> None:
 def test_weak_press_is_rejected_with_a_useful_message() -> None:
     result = calibrate(pressed=(60, -39)).build(min_separation=3.0, dpad_threshold=0.5)
     assert not result.ok
-    assert any("Botón A" in problem for problem in result.problems)
+    assert any("Button A" in problem for problem in result.problems)
 
 
 def test_weak_dpad_right_is_rejected() -> None:
     result = calibrate(dpad_right=(61, -40)).build(min_separation=3.0, dpad_threshold=0.5)
     assert not result.ok
-    assert any("Cruceta derecha" in problem for problem in result.problems)
+    assert any("D-pad right" in problem for problem in result.problems)
 
 
 def test_left_thumb_drifting_to_right_while_pressing_a_is_rejected() -> None:
-    """El caso de la sesión de noche: al pulsar A, el pulgar izquierdo se iba a 'derecha'."""
+    """The night-session case: when pressing A, the left thumb drifted to 'right'."""
     drifted = (REST[0] + 0.8 * (DPAD_RIGHT[0] - REST[0]), REST[1])
     result = calibrate(left_while_a=drifted).build(min_separation=3.0, dpad_threshold=0.5)
     assert not result.ok
-    assert any("Al pulsar A" in problem and "derecha" in problem for problem in result.problems)
+    assert any("When pressing A" in problem and "right" in problem for problem in result.problems)
 
 
 def test_frames_without_the_required_hand_do_not_count() -> None:
     collector = CalibrationCollector(frames_per_pose=FRAMES)
-    assert collector.add(None, make_hand(*REST)) is False          # reposo necesita las dos
+    assert collector.add(None, make_hand(*REST)) is False          # rest needs both
     assert collector.add(make_hand(*REST), make_hand(*REST)) is True
     assert collector.progress == pytest.approx(1 / FRAMES)
 

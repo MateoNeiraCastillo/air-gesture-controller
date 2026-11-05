@@ -1,49 +1,49 @@
-# Configuración del Air Gesture Controller.
-# Todos los valores se validan al arrancar: si algo está fuera de rango,
-# el programa no arranca y te dice qué línea corregir.
+# Air Gesture Controller configuration.
+# Every value is validated at startup: if anything is out of range, the
+# program refuses to start and tells you which line to fix.
 
 [calibration]
-# Frames VÁLIDOS (mano detectada) que se recogen por cada postura.
-# 90 frames ≈ 3 s a 30 fps, lo mismo que en el spike.
+# VALID frames (hand detected) collected for each pose.
+# 90 frames ≈ 3 s at 30 fps, same as in the spike.
 frames_per_pose = 90
-# Separación mínima entre dos posturas (p. ej. reposo vs A pulsado), medida en
-# desviaciones típicas de la propia postura. Por debajo, la calibración se
-# rechaza y se pide repetir: pulsaste demasiado flojo o la mano se movió.
+# Minimum separation between two poses (e.g. rest vs A pressed), measured in
+# standard deviations of the pose itself. Below this, the calibration is
+# rejected and you are asked to repeat it: you pressed too lightly or your hand moved.
 min_separation = 3.0
 
 [classifier]
-# La cruceta cuenta como pulsada cuando el pulgar ha recorrido esta fracción
-# del camino entre reposo y la dirección calibrada. 0.5 = a mitad de camino.
-# Más bajo: más sensible, pero más pulsaciones accidentales.
-# 0.3 medido con el spike: en el `combo` de día el pulgar solo hacía ~50 % del
-# recorrido calibrado (0.5 acertaba el 49 %, 0.3 el 98 %), y en reposo el
-# pulgar rara vez pasa de 0.2. La máquina de estados filtra los parpadeos.
+# The D-pad counts as pressed once the thumb has travelled this fraction of
+# the way between rest and the calibrated direction. 0.5 = halfway.
+# Lower: more sensitive, but more accidental presses.
+# 0.3 measured with the spike: in the daytime `combo` the thumb only covered
+# ~50 % of the calibrated travel (0.5 got 49 % right, 0.3 got 98 %), and at rest
+# the thumb rarely goes past 0.2. The state machine filters out flickers.
 dpad_threshold = 0.3
 
 [posture]
-# Si el tamaño aparente de la mano se aleja de la calibración más allá de estos
-# límites (porque la mano ha girado o te has acercado o alejado), se avisa.
+# If the apparent hand size drifts from the calibration beyond these limits
+# (because the hand has rotated or you moved closer or further away), a warning is shown.
 hand_size_ratio_min = 0.7
 hand_size_ratio_max = 1.4
-# Tiempo seguido fuera de rango antes de avisar: un frame raro no debe saltar.
+# Continuous time out of range before warning: a single odd frame should not trigger it.
 warning_after_ms = 500
 
 [timing]
-# Tiempo que un botón tiene que verse pulsado antes de enviar la tecla.
-# En la práctica se redondea a frames: exige ver el botón en 2 frames seguidos.
-# Medido en la sesión guiada (bucle a ~15 fps): sin confirmación (0) se cuelan
-# pulsaciones fantasma (toques exactos 78 %); con 40, 60 u 80 ms el acierto es
-# el mismo (100 %) y el retraso lo marca el ritmo de frames. 40 da menos
-# retraso en cuanto el bucle vaya más rápido.
+# How long a button must be seen pressed before the key is sent.
+# In practice this rounds to frames: it requires seeing the button in 2 consecutive frames.
+# Measured in the guided session (loop at ~15 fps): without confirmation (0)
+# ghost presses slip through (exact taps 78 %); with 40, 60 or 80 ms the accuracy
+# is the same (100 %) and the delay is set by the frame rate. 40 gives less
+# delay once the loop runs faster.
 press_confirm_ms = 40
-# Tiempo que tiene que verse soltado antes de soltar la tecla.
+# How long it must be seen released before the key is released.
 release_confirm_ms = 40
-# Tiempo sin ver una mano antes de soltar sus botones. Cubre los parpadeos de
-# detección (~2-5 % de frames en el spike) sin dejar teclas pegadas.
+# Time without seeing a hand before releasing its buttons. Covers detection
+# flickers (~2-5 % of frames in the spike) without leaving keys stuck.
 missing_hand_ms = 200
 
 [keys]
-# Tecla que envía cada botón. PENDIENTE: confirmar con FullScreenMario en la Fase 3.
+# Key sent by each button. TODO: confirm with FullScreenMario in Phase 3.
 left = "left"
 right = "right"
 a = "up"
