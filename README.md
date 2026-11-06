@@ -4,6 +4,8 @@
 
 Play keyboard games with an invisible NES controller. A regular webcam and MediaPipe track your thumbs, and your gestures become real key presses in whichever window has focus.
 
+Made for [Subway Surfers](https://poki.com/en/g/subway-surfers) in the browser: switch lanes with the left thumb, jump and roll with the right one.
+
 ## Results
 
 Measured on a MacBook Pro M1 with its built-in webcam.
@@ -11,7 +13,9 @@ Measured on a MacBook Pro M1 with its built-in webcam.
 | Measurement | Result |
 |---|---|
 | 2.5-minute guided session: worst button / exact A taps | 99.4 % / 9 of 9 |
-| Playing Celeste: frame → key (p50 / p95), loop speed | 68 / 85 ms, 18–20 fps |
+| Playing Subway Surfers (1 min): presses sent, hands in view | 39 (16 lane changes, 14 jumps, 9 rolls), 98–99 % |
+| Playing Subway Surfers: loop speed, MediaPipe per frame | 12 fps, 76 ms (the 3D game shares the computer with the controller) |
+| Frame → key (p50 / p95), in a lighter 2D game | 68 / 85 ms |
 | Relaxed thumb read as "A held", worst 15 s of each game (2 games, replayed) | 94 % and 81 % → 42 % and 47 % |
 | Accidental B presses in one game (replayed) | 28 → 14, every real B still caught (11 of 11) |
 | Tests, run on every push (Python 3.11–3.13) | 153 |
@@ -43,8 +47,7 @@ curl -L -o models/hand_landmarker.task \
 
 ```bash
 python scripts/play.py --dry-run         # prints the keys instead of sending them
-python scripts/play.py                   # default keys
-python scripts/play.py --game celeste    # keys from the [games.celeste] profile
+python scripts/play.py                   # plays: the default keys are Subway Surfers'
 python scripts/analyze_play.py           # what went wrong in the last game
 ```
 
@@ -52,18 +55,19 @@ Every game is saved in `data/play/` so it can be analyzed afterwards. Add `--no-
 
 ## How to play
 
-1. **Calibrate.** Hold both hands up in vertical fists, thumbs up, as if holding a controller. The screen guides you through five poses each time you start.
-2. **Click the game window.** Keys go to whichever window has focus.
-3. **Play.**
+1. **Open the game.** [Subway Surfers on Poki](https://poki.com/en/g/subway-surfers), on one side of the screen, leaving room for the controller window.
+2. **Calibrate.** Hold both hands up in vertical fists, thumbs up, as if holding a controller, with your thumbs relaxed as you'll have them while playing. The screen guides you through five poses each time you start.
+3. **Click the game window.** Keys go to whichever window has focus.
+4. **Play.**
 
-| Button | Gesture | Default key | `--game celeste` |
+| Button | Gesture | Key | In Subway Surfers |
 |---|---|---|---|
-| Left | Tilt the left thumb outwards | `left` | `left` |
-| Right | Tilt the left thumb inwards, towards the other hand | `right` | `right` |
-| A | Push the right thumb down | `up` | `c` |
-| B | Tilt the right thumb outwards, the same way as during calibration | `down` | `x` |
+| Left | Tilt the left thumb outwards | `left` | Move one lane left |
+| Right | Tilt the left thumb inwards, towards the other hand | `right` | Move one lane right |
+| A | Push the right thumb down | `up` | Jump |
+| B | Tilt the right thumb outwards, the same way as during calibration | `down` | Roll |
 
-A and B use the same thumb, so they can't be pressed at the same time.
+Every move in Subway Surfers is a tap: move the thumb and bring it back. A and B use the same thumb, so they can't be pressed at the same time.
 
 | Key (click the controller window first) | Action |
 |---|---|
@@ -85,9 +89,11 @@ Run `python scripts/analyze_play.py` after a game. It reads the saved game and r
 
 It ends with suggestions, such as more light or a different calibration.
 
-## Add a game
+## Other games
 
-Keys and thresholds are in [config.toml](config.toml). Add a profile that lists only the keys that differ from `[keys]`, then run it with `--game mygame`:
+Any keyboard game that uses left, right, up and down works with the default keys: the Chrome dino (`chrome://dino`) or [Jstris](https://jstris.jezevec10.me) (Tetris), for example.
+
+For a game with other keys, add a profile to [config.toml](config.toml) that lists only the keys that differ from `[keys]`, then run it with `--game mygame`. A `celeste` profile is included as an example.
 
 ```toml
 [games.mygame]

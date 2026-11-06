@@ -79,8 +79,9 @@ With the threaded loop: 19.9 fps, MediaPipe p50 54 / p95 60 ms (the spikes were 
 
 | Game | Keys | Status |
 |---|---|---|
+| [Subway Surfers](https://poki.com/en/g/subway-surfers) (Poki, browser) | default (`left`/`right` lanes, `up` jumps, `down` rolls) | **Main game since 06-11.** All four buttons map to it, every move is a tap, and the player called it "incredible". First game (1 min): 39 presses, hands seen 98–99 %, no stuck keys, but only 12 fps: MediaPipe takes 76 ms per frame while the 3D game runs (56 ms with Celeste) |
 | Chrome dino (`chrome://dino`) | default (`up` jumps, `down` ducks) | Played: works well |
-| [Celeste Classic](https://maddymakesgamesinc.itch.io/celesteclassic) (PICO-8, browser) | `--game celeste` (`c` jumps, `x` dashes) | Next |
+| [Celeste Classic](https://maddymakesgamesinc.itch.io/celesteclassic) (PICO-8, browser) | `--game celeste` (`c` jumps, `x` dashes) | On hold: the first level (100 m) needs a dash up and up-right, and the D-pad has no "up" |
 | FullScreenMario | — | Dropped: the project was taken down after DMCA notices from Nintendo |
 
 ## Decisions and findings
@@ -90,8 +91,8 @@ With the threaded loop: 19.9 fps, MediaPipe p50 54 / p95 60 ms (the spikes were 
 
 ## Pending
 
-1. **Play Celeste again** with the re-learned rest and compare with `analyze_play.py`: A held % should stay flat over the game.
-2. **Dash up and diagonals** need an "up" direction on the D-pad, which the left thumb can't give: probably raising the left fist. Only worth it if Celeste is playable with horizontal dashes.
+1. **Speed in Subway Surfers.** The loop drops to 12 fps because the 3D game competes with MediaPipe. Try a smaller game window or a lower in-game quality, close other tabs, and measure again; then decide whether the controller needs to get lighter.
+2. **Record the demo** (Subway Surfers and the controller window side by side) for the README.
+3. **"Up" on the D-pad** (raising the left fist), only if a game needs it, e.g. Celeste's up and diagonal dashes.
 3. **Add B to the guided session** so its accuracy is measured, not only its accidental presses. Old sessions must still be scored with the old script.
-4. **Measure the threaded loop on the M1 while playing Celeste.** If MediaPipe still spikes (p95 ≫ p50), check what else is using the CPU; the browser running the game is the first suspect.
-5. The calibration screens and the guided session still run in series (detect, then draw). That's fine: no keys are sent there.
+4. The calibration screens and the guided session still run in series (detect, then draw). That's fine: no keys are sent there.

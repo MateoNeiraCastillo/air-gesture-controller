@@ -21,8 +21,8 @@ needs the Accessibility permission.
 
 Usage:
     python scripts/play.py --dry-run     # doesn't send keys: prints them
-    python scripts/play.py               # plays for real
-    python scripts/play.py --game celeste  # keys from the [games.celeste] profile
+    python scripts/play.py               # plays for real (default keys: Subway Surfers)
+    python scripts/play.py --game celeste  # keys from a [games.<name>] profile in config.toml
     python scripts/analyze_play.py         # what went wrong in the last game
 """
 

@@ -70,11 +70,12 @@ release_confirm_ms = 40
 missing_hand_ms = 200
 
 [keys]
-# Key sent by each button by default (Chrome dino, SuperTuxKart...).
+# Keys sent by default: Subway Surfers (left/right change lane, up jumps, down
+# rolls). The same keys work in the Chrome dino and in Tetris (Jstris).
 left = "left"
 right = "right"
 a = "up"
-# B: tilt the right thumb outwards. Down: duck in the dino game, brake in SuperTuxKart.
+# B: tilt the right thumb outwards.
 b = "down"
 
 # Per-game profiles: only the listed keys change; the rest come from [keys].
@@ -83,5 +84,7 @@ b = "down"
 # for a game where you hold A or B for more than ~4 s, like an accelerator.
 [games.celeste]
 # Celeste Classic (PICO-8, browser): arrows to move, C (or Z) jumps, X dashes.
+# On hold: its first level (100 m) needs a dash up or up-right, and the D-pad
+# has no "up" yet. Kept as an example of a profile.
 a = "c"
 b = "x"
