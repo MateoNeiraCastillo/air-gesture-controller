@@ -146,7 +146,7 @@ def test_good_calibration_includes_b() -> None:
 
 
 def test_sequence_without_b_skips_the_pose_and_disables_b() -> None:
-    """Para re-analizar los clips del spike, que no tienen postura B."""
+    """To replay the spike clips, which have no B pose."""
     collector = CalibrationCollector(frames_per_pose=FRAMES, sequence=SEQUENCE_WITHOUT_B)
     for pose, left_tip, right_tip in [(Pose.REST, REST, REST), (Pose.A_PRESSED, REST, PRESSED),
                                       (Pose.DPAD_LEFT, DPAD_LEFT, REST), (Pose.DPAD_RIGHT, DPAD_RIGHT, REST)]:
