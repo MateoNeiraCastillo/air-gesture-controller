@@ -1,0 +1,28 @@
+# Runs the test suite on every push and pull request.
+# The tests need no camera, no MediaPipe model and no keyboard access, so this
+# installs only what they import (numpy, OpenCV, pytest), not requirements.txt.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy opencv-python-headless pytest
+          pip install --no-deps -e .
+      - name: Test
+        run: python -m pytest tests -q
