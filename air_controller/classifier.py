@@ -112,10 +112,13 @@ class Classifier:
             self._thumb_buttons.append(
                 ThumbButton(Button.B, B_COLUMNS, calibration.right_rest, calibration.right_b))
 
-    def classify(self, left: np.ndarray | None, right: np.ndarray | None,
+    def classify(self, left: np.ndarray | None, right: np.ndarray | None, *,
                  rest_offsets: Mapping[Button, float] | None = None) -> FrameReading:
         """`left`/`right`: landmarks (21, 3) in pixels, or None if the hand is not visible.
-        `rest_offsets`: where the thumb's rest is now, as progress (0 = calibrated rest)."""
+        `rest_offsets`: where the thumb's rest is now, as progress (0 = calibrated rest).
+        Keyword-only: the game loop calls classify(left, right, timestamp_ms) on an
+        AdaptiveClassifier, and passing a bare Classifier there must fail loudly, not
+        take the timestamp for the offsets."""
         pressed: set[Button] = set()
         left_features = _features(left)
         right_features = _features(right)

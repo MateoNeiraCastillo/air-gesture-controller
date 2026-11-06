@@ -94,7 +94,7 @@ class AdaptiveClassifier:
         self.tracker = tracker
 
     def classify(self, left: np.ndarray | None, right: np.ndarray | None, timestamp_ms: int) -> FrameReading:
-        reading = self.classifier.classify(left, right, self.tracker.offsets())
+        reading = self.classifier.classify(left, right, rest_offsets=self.tracker.offsets())
         self.tracker.update(timestamp_ms, {button: value for button, value in reading.thumb_progress.items()
                                            if button in RELEARNED})
         return reading
