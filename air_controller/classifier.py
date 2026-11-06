@@ -21,6 +21,10 @@ machine (layer 4).
   thumb wanders outwards without going down; with "outwards only", 18 of 28 B
   presses in a real game were that wandering (05-11, game 3). Requiring both:
   11 B presses, and all 11 moments with the calibrated B shape still caught.
+  A tilt of `b_strong_threshold` (1.2 of the calibrated tilt) counts on its own:
+  on 06-11 the player tried to dash with strong tilts (up to 2.0) without
+  lowering the thumb, and none of them was sent. The wandering thumb stayed
+  under 0.9.
   `rest_offsets` moves where "rest" is, for a thumb that rests differently while
   playing than while calibrating (see rest_tracker.py); without it, the
   calibrated rest is used.
@@ -103,6 +107,7 @@ class Classifier:
         self._button_threshold = config.button_threshold
         self._b_threshold = config.b_threshold
         self._b_down_fraction = config.b_down_fraction
+        self._b_strong_threshold = config.b_strong_threshold
         # How far towards A (down) the calibrated B pose goes: 0.6–0.97 for the 05-11 player.
         self._b_down = (axis_progress(calibration.right_rest, calibration.right_a, A_COLUMNS,
                                       calibration.right_b.center)
@@ -164,6 +169,8 @@ class Classifier:
         """Outwards enough, and down like the calibrated B (measured from the calibrated rest)."""
         if progress[Button.B] < self._b_threshold:
             return False
+        if progress[Button.B] >= self._b_strong_threshold:   # clearly outwards: no need to go down
+            return True
         if self._b_down < MIN_B_DOWN:          # this player's B doesn't lower the thumb
             return True
         return progress[Button.A] >= self._b_down_fraction * self._b_down

@@ -13,7 +13,7 @@ Measured on a MacBook Pro M1 with its built-in webcam.
 | 2.5-minute guided session: worst button / exact A taps | 99.4 % / 9 of 9 |
 | Playing Celeste: frame → key (p50 / p95), loop speed | 68 / 85 ms, 18–20 fps |
 | Relaxed thumb read as "A held", worst 15 s of each game (2 games, replayed) | 94 % and 81 % → 42 % and 47 % |
-| Accidental B presses in one game (replayed) | 28 → 11, every real B still caught (11 of 11) |
+| Accidental B presses in one game (replayed) | 28 → 14, every real B still caught (11 of 11) |
 | Tests, run on every push (Python 3.11–3.13) | 153 |
 
 How each number was measured, and what changed to get it, is in [docs/phase3-progress.md](docs/phase3-progress.md).

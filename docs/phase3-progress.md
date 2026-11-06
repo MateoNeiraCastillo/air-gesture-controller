@@ -2,7 +2,7 @@
 
 **Goal:** connect the Phase 2 logic to the game: real keys, a complete loop and measured latency.
 
-## Done (tested without a camera, with videos and a simulated keyboard; 153 tests)
+## Done (tested without a camera, with videos and a simulated keyboard; 153 tests, run on every push)
 
 | Module | What it does |
 |---|---|
@@ -72,6 +72,7 @@ With the threaded loop: 19.9 fps, MediaPipe p50 54 / p95 60 ms (the spikes were 
   **Limit:** a button held for more than ~4 s is released (in the spike's 29 s `a_held` clip, A was held 14 % of the clip instead of 100 %). Fine for Celeste and the dino; a game where you hold the accelerator needs `rest_window_ms = 0` in its `[games.<name>]` profile.
 - **Button B didn't work well** (the player's report, confirmed in both games). Tilting the thumb outwards also lowers its tip: in the calibrations the B pose was 60–97 % of the way to A. With "the clearer button wins", A and B were close to a tie, and in the second game B's re-learned rest rose to ~0.5: 28 % of the outward tilts were read as A or nothing. **Decision: B wins whenever the thumb is outwards** (pressing A moves it clearly inwards: −1.4 and −2.0 along B), **and only A's rest is re-learned.** Replayed: 100 % of the tilts read as B in both games, A unchanged. Calibration now rejects an A press that drifts outwards (≥ 20 % of the way to B), which would otherwise become B.
 - **B still had false presses** (third game, 23:29: 28 B sent). Most were the relaxed thumb wandering outwards *without* going down (outwards 0.4–0.9, down ≤ 0), while the player's calibrated B is outwards *and* down (0.6–0.97 of the way to A). **Decision: B needs both**, 0.6 of the outward tilt and 0.4 of the calibrated lowering (from the calibrated rest; a B that doesn't lower the thumb only needs the tilt). Replayed with the real code: game 3 28 → 11 B presses with all 11 moments in the calibrated B shape caught; game 2 7 → 4 (4/4); game 1 24 → 17 (13/14). A unchanged; guided session unchanged.
+- **Strong dash attempts were lost** (06-11, 11:17, the best game so far: 36 clean jumps, D-pad near its threshold only 6.7 % of the time). That calibration's B lowered the thumb as much as A, so "down 0.4 of B's" asked for a lot, and the player confirmed dashing at 11–18 s and 41–44 s with strong outward tilts (1.3–2.0) that didn't go down: none was sent. **Decision: a tilt of 1.2 or more counts on its own.** Replayed: those attempts now send B (8 → 13 in that game), and the earlier games gain 1–3 B presses (game 3: 11 → 14). Only one strong tilt is still unread.
 - Also seen in that game: the D-pad spent 34 % of the time within ±0.1 of its threshold and the right hand was lost 4 times (once for 2.7 s).
 
 ## Games

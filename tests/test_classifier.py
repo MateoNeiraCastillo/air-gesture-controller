@@ -167,8 +167,11 @@ def test_b_needs_the_downward_part_when_the_calibrated_b_has_it() -> None:
     result = collector.build(min_separation=3.0, dpad_threshold=0.5)
     assert result.ok, result.problems
     classifier = Classifier(result.calibration, ClassifierConfig(dpad_threshold=0.5, button_threshold=0.4,
-                                                                 b_threshold=0.6, b_down_fraction=0.4))
+                                                                 b_threshold=0.6, b_down_fraction=0.4,
+                                                                 b_strong_threshold=1.2))
     left = make_hand(*REST)
     assert Button.B not in classifier.classify(left, make_hand(95, -40, noise=0)).pressed     # out, not down
+    # 06-11: a strong tilt (beyond the calibrated one) counts even without going down
+    assert classifier.classify(left, make_hand(110, -40, noise=0)).pressed == {Button.B}
     assert classifier.classify(left, make_hand(100, -15, noise=0)).pressed == {Button.B}       # like calibrated
     assert classifier.classify(left, make_hand(90, -28, noise=0)).pressed == {Button.B}        # lighter, same shape

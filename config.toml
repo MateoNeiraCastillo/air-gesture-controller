@@ -29,6 +29,11 @@ b_threshold = 0.6
 # "outwards only" (0.4), 18 of 28 B presses in a real game were that wandering.
 # With 0.6 and 0.4: 11 B presses, every real B shape still caught (11/11).
 b_down_fraction = 0.4
+# ...unless the tilt is this strong (1.2 of the calibrated one): then it counts
+# on its own. On 06-11, strong dash attempts (up to 2.0) without lowering the
+# thumb were all lost; the wandering thumb stays under ~0.9. This adds 1–5 B
+# presses per game in the recorded games.
+b_strong_threshold = 1.2
 # Re-learn where the right thumb rests while you play (button A). In two
 # Celeste games the relaxed thumb crept to 0.6–1.0 of the calibrated A press
 # (the fist rolled, the thumb relaxed): A was "held" up to 81–94 % of the time.

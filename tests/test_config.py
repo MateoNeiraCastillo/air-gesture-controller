@@ -7,7 +7,7 @@ from air_controller.config import ConfigError, config_for_game, keys_for_game, l
 
 VALID = {
     "calibration": {"frames_per_pose": 90, "min_separation": 3.0},
-    "classifier": {"dpad_threshold": 0.5, "button_threshold": 0.5, "b_threshold": 0.6, "b_down_fraction": 0.4, "rest_window_ms": 5000, "rest_percentile": 20, "rest_max_shift": 0.8},
+    "classifier": {"dpad_threshold": 0.5, "button_threshold": 0.5, "b_threshold": 0.6, "b_down_fraction": 0.4, "b_strong_threshold": 1.2, "rest_window_ms": 5000, "rest_percentile": 20, "rest_max_shift": 0.8},
     "posture": {"hand_size_ratio_min": 0.7, "hand_size_ratio_max": 1.4, "warning_after_ms": 500},
     "timing": {"press_confirm_ms": 80, "release_confirm_ms": 80, "missing_hand_ms": 200},
     "keys": {"left": "left", "right": "right", "a": "up", "b": "down"},
