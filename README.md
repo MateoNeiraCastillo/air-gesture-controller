@@ -1,5 +1,7 @@
 # Air Gesture Gaming Controller
 
+[![tests](https://github.com/Parth-fintech/Air-Gesture-Gaming-Control-System/actions/workflows/tests.yml/badge.svg)](https://github.com/Parth-fintech/Air-Gesture-Gaming-Control-System/actions/workflows/tests.yml)
+
 Play keyboard games with an invisible NES controller. A regular webcam and MediaPipe track your thumbs, and your gestures become real key presses in whichever window has focus.
 
 ## Setup
@@ -29,7 +31,10 @@ curl -L -o models/hand_landmarker.task \
 python scripts/play.py --dry-run         # prints the keys instead of sending them
 python scripts/play.py                   # default keys
 python scripts/play.py --game celeste    # keys from the [games.celeste] profile
+python scripts/analyze_play.py           # what went wrong in the last game
 ```
+
+Every game is saved in `data/play/` so it can be analyzed afterwards. Add `--no-record` to `play.py` to skip that.
 
 ## How to play
 
@@ -42,7 +47,7 @@ python scripts/play.py --game celeste    # keys from the [games.celeste] profile
 | Left | Tilt the left thumb outwards | `left` | `left` |
 | Right | Tilt the left thumb inwards, towards the other hand | `right` | `right` |
 | A | Push the right thumb down | `up` | `c` |
-| B | Tilt the right thumb outwards | `down` | `x` |
+| B | Tilt the right thumb outwards, the same way as during calibration | `down` | `x` |
 
 A and B use the same thumb, so they can't be pressed at the same time.
 
@@ -54,6 +59,18 @@ A and B use the same thumb, so they can't be pressed at the same time.
 
 To release all keys quickly, move your hands out of view.
 
+## When something feels wrong
+
+Run `python scripts/analyze_play.py` after a game. It reads the saved game and reports, in plain words:
+
+- how often each hand was lost, and for how long;
+- presses the camera saw but that were too short to send, and holds that were cut;
+- how long the D-pad sat near its threshold, where it flickers;
+- how often A and B were confused;
+- frame rate and stutters.
+
+It ends with suggestions, such as more light or a different calibration.
+
 ## Add a game
 
 Keys and thresholds are in [config.toml](config.toml). Add a profile that lists only the keys that differ from `[keys]`, then run it with `--game mygame`:
@@ -63,6 +80,8 @@ Keys and thresholds are in [config.toml](config.toml). Add a profile that lists 
 a = "space"
 b = "z"
 ```
+
+While you play, the controller re-learns where your right thumb rests, so a thumb that relaxes during the game doesn't press A on its own. As a side effect, A held for more than about 4 seconds is released. If your game needs long holds, such as an accelerator, turn it off in the profile with `rest_window_ms = 0`.
 
 ## Get updates
 
