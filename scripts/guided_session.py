@@ -1,4 +1,4 @@
-"""~2.5-minute guided session: the final exam of Phase 2.
+"""~2.5-minute guided session: the Phase 2 exam, or data collection for the ML models.
 
 1. You calibrate as in calibrate_live.py (R to repeat if rejected).
 2. For ~2.5 min the screen asks you for actions (hold right, press A
@@ -8,10 +8,18 @@
        python scripts/evaluate_guided.py
 
 Usage:
-    python scripts/guided_session.py
+    python scripts/guided_session.py                              # classic exam (no B)
+    python scripts/guided_session.py --script data --person ana   # collect training data
+
+With --script data, every button and combination (B included) is asked for in a
+random order, and the script is saved in the file so each frame can be labelled.
+--person is a short nickname to tell people apart in the dataset (never a full
+name). Only hand landmarks are saved, never images.
 """
 
 import argparse
+import random
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -20,12 +28,21 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from calibrate_live import MODEL_PATH, LiveCalibration, detect_hands  # noqa: E402  (sibling script, same directory)
+from calibrate_live import (  # noqa: E402  (sibling script, same directory)
+    MODEL_PATH,
+    LiveCalibration,
+    detect_hands,
+)
 
 from air_controller.capture import LatestFrameCamera, VideoFileSource  # noqa: E402
 from air_controller.config import load_config  # noqa: E402
 from air_controller.dashboard import WINDOW, draw_hands, render_game  # noqa: E402
-from air_controller.guided import build_script, to_mask  # noqa: E402
+from air_controller.guided import (  # noqa: E402
+    build_data_script,
+    build_script,
+    script_arrays,
+    to_mask,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "data" / "guided"
@@ -33,9 +50,14 @@ LEAD_IN_MS = 3000
 
 
 class GuidedSession:
-    def __init__(self, app: LiveCalibration, blocks: int) -> None:
+    def __init__(self, app: LiveCalibration, blocks: int, script_name: str = "classic",
+                 seed: int = 0, person: str = "") -> None:
         self.app = app
-        self.script = build_script(blocks)
+        self.script_name = script_name
+        self.seed = seed
+        self.person = person
+        self.script = (build_data_script(blocks, seed) if script_name == "data"
+                       else build_script(blocks))
         self.rows: dict[str, list] = {key: [] for key in (
             "timestamp_ms", "step", "raw_mask", "held_mask", "left_visible", "right_visible",
             "dpad_left_progress", "dpad_right_progress", "posture_warning", "left", "right")}
@@ -116,7 +138,8 @@ class GuidedSession:
 
     def save(self, completed: bool) -> Path:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        path = OUT_DIR / f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.npz"
+        suffix = f"_{self.person}" if self.person else ""
+        path = OUT_DIR / f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}.npz"
         rows = {key: np.array(values) for key, values in self.rows.items()}
         np.savez_compressed(
             path,
@@ -129,6 +152,10 @@ class GuidedSession:
             event_pressed=np.array([p for _, _, p in self.events]),
             press_confirm_ms=np.array(self.app.config.timing.press_confirm_ms),
             dpad_threshold=np.array(self.app.config.classifier.dpad_threshold),
+            script_name=np.array(self.script_name),
+            seed=np.array(self.seed),
+            person=np.array(self.person),
+            **script_arrays(self.script),
             **rows,
         )
         return path
@@ -138,7 +165,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Phase 2 guided session.")
     parser.add_argument("--video", type=Path, help="use a video instead of the camera (testing)")
     parser.add_argument("--blocks", type=int, default=3)
+    parser.add_argument("--script", choices=("classic", "data"), default="classic",
+                        help="classic = Phase 2 exam; data = every button incl. B, random order")
+    parser.add_argument("--person", default="",
+                        help="short nickname for the dataset, e.g. mateo or p01 (not a full name)")
+    parser.add_argument("--seed", type=int, help="order of the data script (random if omitted)")
     args = parser.parse_args()
+    if args.person and not re.fullmatch(r"[a-z0-9]{1,16}", args.person):
+        print("--person must be a short nickname: lowercase letters and digits, e.g. mateo or p01.")
+        return
+    if args.script == "data" and not args.person:
+        print("Data sessions need --person (a short nickname), so the dataset can tell people apart.")
+        return
+    seed = args.seed if args.seed is not None else random.randrange(1_000_000)
+    if args.script == "data":
+        print(f"Collecting data for '{args.person}' (order seed {seed}). Only hand landmarks are "
+              "saved, never images.")
     if not MODEL_PATH.exists():
         print(f"Model missing at {MODEL_PATH}. Download it as explained in the README (Quick start).")
         return
@@ -153,7 +195,7 @@ def main() -> None:
                 print("Calibration interrupted; no session.")
                 return
         print("\nCalibration accepted. Starting the guided session.")
-        session = GuidedSession(app, args.blocks)
+        session = GuidedSession(app, args.blocks, args.script, seed, args.person)
         completed = session.run()
         app.machine.release_all(app.last_timestamp_ms)
         path = session.save(completed)

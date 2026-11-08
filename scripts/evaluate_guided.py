@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from air_controller.buttons import Button
-from air_controller.guided import BUTTON_BITS, StepScore, build_script, score_step
+from air_controller.guided import BUTTON_BITS, StepScore, score_step, steps_from_session
 from air_controller.recordings import guided_sessions
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,7 +25,7 @@ def latest_session() -> Path | None:
 
 
 def scores_for(data) -> list[StepScore]:
-    script = build_script(int(data["blocks"]))
+    script = steps_from_session(data)
     timestamps = data["timestamp_ms"]
     held = data["held_mask"]
     a_presses = data["event_times_ms"][(data["event_buttons"] == Button.A.value) & data["event_pressed"]]
