@@ -1,6 +1,8 @@
 # Air Gesture Gaming Controller
 
-[![tests](https://github.com/Parth-fintech/Air-Gesture-Gaming-Control-System/actions/workflows/tests.yml/badge.svg)](https://github.com/Parth-fintech/Air-Gesture-Gaming-Control-System/actions/workflows/tests.yml)
+[![tests](https://github.com/MateoNeiraCastillo/air-gesture-controller/actions/workflows/tests.yml/badge.svg)](https://github.com/MateoNeiraCastillo/air-gesture-controller/actions/workflows/tests.yml)
+
+![Playing Subway Surfers with thumb gestures](docs/demo.webp)
 
 Play keyboard games with an invisible NES controller. A regular webcam and MediaPipe track your thumbs, and your gestures become real key presses in whichever window has focus.
 
@@ -27,8 +29,8 @@ How each number was measured, and what changed to get it, is in [docs/phase3-pro
 You need Python 3.11 or newer and a webcam.
 
 ```bash
-git clone https://github.com/Parth-fintech/Air-Gesture-Gaming-Control-System.git
-cd Air-Gesture-Gaming-Control-System
+git clone https://github.com/MateoNeiraCastillo/air-gesture-controller.git
+cd air-gesture-controller
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -105,7 +107,7 @@ While you play, the controller re-learns where your right thumb rests, so a thum
 
 ## Get updates
 
-All work goes to the `main` branch. The repository is private, so you need to be added as a collaborator and signed in to GitHub.
+All work goes to the `main` branch.
 
 **Latest version**
 
@@ -123,7 +125,7 @@ git switch --detach <commit>       # go to one, e.g. 27c0768
 git switch main                    # come back to the latest
 ```
 
-**Without git:** every push is listed in the [commit history](https://github.com/Parth-fintech/Air-Gesture-Gaming-Control-System/commits/main), where you can browse the files of any version. To download one as a ZIP, use `https://github.com/Parth-fintech/Air-Gesture-Gaming-Control-System/archive/<commit>.zip`.
+**Without git:** every push is listed in the [commit history](https://github.com/MateoNeiraCastillo/air-gesture-controller/commits/main), where you can browse the files of any version. To download one as a ZIP, use `https://github.com/MateoNeiraCastillo/air-gesture-controller/archive/<commit>.zip`.
 
 ## Tests
 
@@ -136,3 +138,7 @@ python -m pytest tests
 ## More
 
 Results and design decisions are in [docs/](docs/).
+
+## Authors
+
+Mateo Neira Castillo and Parth Deshmukh.
