@@ -14,7 +14,7 @@ def open_camera(index: int) -> cv2.VideoCapture:
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     if not camera.isOpened():
-        raise RuntimeError("Could not open the camera. Check the macOS permissions.")
+        raise RuntimeError("Could not open the camera. Check the camera permission: on macOS, System Settings > Privacy & Security > Camera; on Windows, Settings > Privacy & security > Camera.")
     return camera
 
 

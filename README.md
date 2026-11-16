@@ -43,6 +43,27 @@ curl -L -o models/hand_landmarker.task \
   https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
 ```
 
+**On Windows** (PowerShell, the default terminal in VS Code), a few commands are different:
+
+```powershell
+git clone https://github.com/MateoNeiraCastillo/air-gesture-controller.git
+cd air-gesture-controller
+
+py -3.13 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .
+
+# The hand model is not stored in the repo: download it once
+mkdir models
+curl.exe -L -o models\hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+```
+
+- `py -3.13` picks a Python version the tests run on (3.11 and 3.12 work too). Plain `python3` may point to a newer version.
+- If activating fails with "running scripts is disabled on this system", run `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` once, then activate again.
+- Type `curl.exe`, not `curl`: in Windows PowerShell, `curl` is a different command.
+- Allow the camera in Settings → Privacy & security → Camera → "Let desktop apps access your camera".
+
 **On macOS**, give the app you run this from (Terminal or VS Code) the Accessibility permission in System Settings. Without it there is no error, but the keys never reach the game.
 
 ## Run

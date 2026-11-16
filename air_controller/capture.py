@@ -40,7 +40,7 @@ class LatestFrameCamera:
         self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         if not self._capture.isOpened():
-            raise RuntimeError("Could not open the camera. Check the macOS permissions.")
+            raise RuntimeError("Could not open the camera. Check the camera permission: on macOS, System Settings > Privacy & Security > Camera; on Windows, Settings > Privacy & security > Camera.")
         self._lock = threading.Lock()
         self._new_frame = threading.Event()
         self._latest: Frame | None = None
